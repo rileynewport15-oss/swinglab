@@ -23,6 +23,7 @@ export type Shape = {
   label?: string;
   labelOffset?: Point; // how far the user dragged the label (video coordinates)
   showTilt?: boolean; // lines only: show degrees away from vertical
+  auto?: boolean; // placed automatically from pose detection
 };
 
 export type Hit = { type: "handle"; index: number } | { type: "label" } | { type: "body" };

@@ -42,3 +42,13 @@ next-env.d.ts
 
 # local editor/agent settings
 .claude/
+
+# copied from node_modules by scripts/copy-mediapipe.mjs
+/public/mediapipe/
+
+# test videos
+*.mp4
+*.mov
+*.MOV
+*.webm
+*.m4v

@@ -18,6 +18,7 @@ type Action =
   | { type: "setPoints"; id: string; points: Point[] } // live edits, no history
   | { type: "setLabelOffset"; id: string; offset: Point } // live edits, no history
   | { type: "cancelShape"; id: string } // remove a just-added shape + its history
+  | { type: "replaceAuto"; shapes: Shape[] } // swap all auto-placed aids for new ones
   | { type: "remove"; id: string }
   | { type: "recolor"; id: string; color: string }
   | { type: "undo" }
@@ -49,6 +50,11 @@ function reducer(state: State, action: Action): State {
       return {
         shapes: state.shapes.filter((s) => s.id !== action.id),
         past: state.past.slice(0, -1),
+      };
+    case "replaceAuto":
+      return {
+        shapes: [...state.shapes.filter((s) => !s.auto), ...action.shapes],
+        past: withHistory(state),
       };
     case "remove":
       return {
@@ -148,6 +154,14 @@ export function useDrawing() {
     [placing],
   );
 
+  // Put pose-detected aids on the video, replacing any earlier auto aids.
+  const placeAutoAids = useCallback((aids: Shape[]) => {
+    dispatch({ type: "replaceAuto", shapes: aids });
+    setPlacing(null);
+    setSelectedId(null);
+    setToolState("move");
+  }, []);
+
   // Keyboard shortcuts for computer use:
   // Delete/Backspace removes the selection, Esc cancels, Ctrl/⌘+Z undoes.
   useEffect(() => {
@@ -187,6 +201,7 @@ export function useDrawing() {
     startPlacing,
     cancelPlacing,
     addPlacementPoint,
+    placeAutoAids,
   };
 }
 
