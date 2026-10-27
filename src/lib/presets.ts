@@ -1,83 +1,73 @@
-import { newId, type Shape } from "./shapes";
+import { newId, type Point, type Shape, type Size } from "./shapes";
 
-// Ready-made training aids. Positions are rough starting spots for a golfer
-// standing in the middle of the frame (0–1 of video width/height). The user
-// drags them into place afterward.
+// Ready-made training aids. Each one is placed by clicking or tapping the
+// video: `steps` are the prompts shown for each click, and `build` turns
+// those clicked points into a shape.
 
 export type PresetId = "swing-plane" | "alignment" | "head" | "spine";
 
-type Preset = {
+export type Preset = {
   id: PresetId;
   name: string;
   description: string;
-  shape: Omit<Shape, "id">;
+  color: string;
+  steps: string[];
+  build: (points: Point[], size: Size) => Omit<Shape, "id">;
 };
 
 export const PRESETS: Preset[] = [
   {
     id: "swing-plane",
     name: "Swing plane",
-    description: "From the ball up through the hands or shoulders",
-    shape: {
+    description: "Ball, then hands. Extends up past the hands",
+    color: "#facc15",
+    steps: ["Click the golf ball", "Click your hands"],
+    build: ([ball, hands]) => ({
       kind: "line",
       color: "#facc15",
       label: "Plane",
-      points: [
-        { x: 0.68, y: 0.88 },
-        { x: 0.32, y: 0.38 },
-      ],
-    },
+      // A plane line runs from the ball up through the hands and beyond,
+      // so extend it 60% past the hands.
+      points: [ball, { x: hands.x + (hands.x - ball.x) * 0.6, y: hands.y + (hands.y - ball.y) * 0.6 }],
+    }),
   },
   {
     id: "alignment",
     name: "Alignment",
-    description: "Along the toe line, pointing at the target",
-    shape: {
-      kind: "line",
-      color: "#ffffff",
-      label: "Alignment",
-      points: [
-        { x: 0.12, y: 0.9 },
-        { x: 0.88, y: 0.9 },
-      ],
-    },
+    description: "Along your toe line toward the target",
+    color: "#ffffff",
+    steps: ["Click one end of the line", "Click the other end (toward the target)"],
+    build: (points) => ({ kind: "line", color: "#ffffff", label: "Alignment", points }),
   },
   {
     id: "head",
     name: "Head circle",
-    description: "Around the head to spot sway or dipping",
-    shape: {
-      kind: "circle",
-      color: "#38bdf8",
-      label: "Head",
-      points: [
-        { x: 0.5, y: 0.25 },
-        { x: 0.57, y: 0.25 },
-      ],
+    description: "Click your head to spot sway or dipping",
+    color: "#38bdf8",
+    steps: ["Click the center of your head"],
+    build: ([center], size) => {
+      // Start with a radius of 4% of the video height (about head-sized for a
+      // full-body shot), then the user can resize it with the edge handle.
+      const radiusPx = size.height * 0.04;
+      return {
+        kind: "circle",
+        color: "#38bdf8",
+        label: "Head",
+        points: [center, { x: center.x + radiusPx / size.width, y: center.y }],
+      };
     },
   },
   {
     id: "spine",
     name: "Spine angle",
-    description: "Hips to base of neck. Shows the tilt in degrees",
-    shape: {
-      kind: "line",
-      color: "#f472b6",
-      label: "Spine",
-      showTilt: true,
-      points: [
-        { x: 0.52, y: 0.58 },
-        { x: 0.42, y: 0.33 },
-      ],
-    },
+    description: "Hips, then base of neck. Shows the tilt",
+    color: "#f472b6",
+    steps: ["Click your hips (tailbone)", "Click the base of your neck"],
+    build: (points) => ({ kind: "line", color: "#f472b6", label: "Spine", showTilt: true, points }),
   },
 ];
 
-/** Make a new copy of a preset's shape to add to the drawing. */
-export function createPresetShape(preset: Preset): Shape {
-  return {
-    ...preset.shape,
-    id: newId(),
-    points: preset.shape.points.map((p) => ({ ...p })),
-  };
+/** Make a training-aid shape from the points the user clicked. */
+export function createPresetShape(preset: Preset, points: Point[], size: Size): Shape {
+  return { ...preset.build(points, size), id: newId() };
 }

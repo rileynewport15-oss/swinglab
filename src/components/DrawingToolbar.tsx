@@ -12,12 +12,12 @@ const TOOLS: { id: Tool; label: string; icon: string }[] = [
 ];
 
 const HINTS: Record<Tool, string> = {
-  move: "Tap a drawing to select it, then drag it or its white dots.",
+  move: "Click a drawing to select it. Drag its dots, line, or label. Delete key removes it.",
   line: "Drag on the video to draw a straight line.",
   freehand: "Drag on the video to draw freely.",
   circle: "Drag from the center outward.",
   box: "Drag from one corner to the opposite corner.",
-  angle: "Tap 3 points: one end, the corner, then the other end.",
+  angle: "Click 3 points: one end, the corner, then the other end.",
 };
 
 type Props = { drawing: DrawingApi };
@@ -43,7 +43,7 @@ export default function DrawingToolbar({ drawing }: Props) {
             className={`flex min-h-14 flex-col items-center justify-center rounded-xl text-xs font-semibold ${
               tool === t.id
                 ? "bg-fairway-700 text-white"
-                : "bg-fairway-50 text-fairway-800 active:bg-fairway-100"
+                : "bg-fairway-50 text-fairway-800 active:bg-fairway-100 hover:bg-fairway-100"
             }`}
           >
             <span aria-hidden className="text-lg leading-none">
@@ -115,7 +115,7 @@ function ActionButton({
       className={`min-h-12 rounded-xl text-sm font-semibold disabled:opacity-40 ${
         danger
           ? "bg-red-50 text-red-700 active:bg-red-100"
-          : "bg-fairway-50 text-fairway-800 active:bg-fairway-100"
+          : "bg-fairway-50 text-fairway-800 active:bg-fairway-100 hover:bg-fairway-100"
       }`}
     >
       {children}

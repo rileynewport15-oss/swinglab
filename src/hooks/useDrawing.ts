@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useReducer, useState } from "react";
-import type { Point, Shape } from "@/lib/shapes";
+import { useCallback, useEffect, useReducer, useState } from "react";
+import type { Point, Shape, Size } from "@/lib/shapes";
+import { createPresetShape, type Preset } from "@/lib/presets";
 
 export type Tool = "move" | "line" | "freehand" | "circle" | "box" | "angle";
 
@@ -13,8 +14,9 @@ type State = { shapes: Shape[]; past: Shape[][] };
 type Action =
   | { type: "add"; shape: Shape } // saves history
   | { type: "saveHistory" } // call before a drag that edits a shape
-  | { type: "dropHistory" } // undo a saveHistory when nothing changed (e.g. a tap)
+  | { type: "dropHistory" } // undo a saveHistory when nothing changed (e.g. a click)
   | { type: "setPoints"; id: string; points: Point[] } // live edits, no history
+  | { type: "setLabelOffset"; id: string; offset: Point } // live edits, no history
   | { type: "cancelShape"; id: string } // remove a just-added shape + its history
   | { type: "remove"; id: string }
   | { type: "recolor"; id: string; color: string }
@@ -27,6 +29,10 @@ function withHistory(state: State): Shape[][] {
   return [...state.past, state.shapes].slice(-MAX_HISTORY);
 }
 
+function updateShape(state: State, id: string, change: Partial<Shape>): Shape[] {
+  return state.shapes.map((s) => (s.id === id ? { ...s, ...change } : s));
+}
+
 function reducer(state: State, action: Action): State {
   switch (action.type) {
     case "add":
@@ -36,12 +42,9 @@ function reducer(state: State, action: Action): State {
     case "dropHistory":
       return { ...state, past: state.past.slice(0, -1) };
     case "setPoints":
-      return {
-        ...state,
-        shapes: state.shapes.map((s) =>
-          s.id === action.id ? { ...s, points: action.points } : s,
-        ),
-      };
+      return { ...state, shapes: updateShape(state, action.id, { points: action.points }) };
+    case "setLabelOffset":
+      return { ...state, shapes: updateShape(state, action.id, { labelOffset: action.offset }) };
     case "cancelShape":
       return {
         shapes: state.shapes.filter((s) => s.id !== action.id),
@@ -53,12 +56,7 @@ function reducer(state: State, action: Action): State {
         past: withHistory(state),
       };
     case "recolor":
-      return {
-        shapes: state.shapes.map((s) =>
-          s.id === action.id ? { ...s, color: action.color } : s,
-        ),
-        past: withHistory(state),
-      };
+      return { shapes: updateShape(state, action.id, { color: action.color }), past: withHistory(state) };
     case "undo":
       if (state.past.length === 0) return state;
       return { shapes: state.past[state.past.length - 1], past: state.past.slice(0, -1) };
@@ -70,21 +68,30 @@ function reducer(state: State, action: Action): State {
 
 export const COLORS = ["#facc15", "#ef4444", "#ffffff", "#38bdf8", "#22c55e", "#f472b6"];
 
+// While placing a training aid: which aid, and the points clicked so far.
+export type Placing = { preset: Preset; points: Point[] };
+
 export function useDrawing() {
   const [state, dispatch] = useReducer(reducer, { shapes: [], past: [] });
   const [tool, setToolState] = useState<Tool>("line");
   const [color, setColorState] = useState(COLORS[0]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [placing, setPlacing] = useState<Placing | null>(null);
 
   // A half-placed angle (fewer than 3 points) is thrown away when switching tools.
+  const dropUnfinishedAngle = useCallback(() => {
+    const unfinished = state.shapes.find((s) => s.kind === "angle" && s.points.length < 3);
+    if (unfinished) dispatch({ type: "cancelShape", id: unfinished.id });
+  }, [state.shapes]);
+
   const setTool = useCallback(
     (t: Tool) => {
-      const unfinished = state.shapes.find((s) => s.kind === "angle" && s.points.length < 3);
-      if (unfinished) dispatch({ type: "cancelShape", id: unfinished.id });
+      dropUnfinishedAngle();
+      setPlacing(null);
       setToolState(t);
       if (t !== "move") setSelectedId(null);
     },
-    [state.shapes],
+    [dropUnfinishedAngle],
   );
 
   // Picking a color also recolors the selected shape, if any.
@@ -111,13 +118,57 @@ export function useDrawing() {
     setSelectedId(null);
   }, [selectedId]);
 
-  // Drop a ready-made shape (training aid) on the video, then switch to Move
-  // with it selected so it can be dragged into place right away.
-  const addAndSelect = useCallback((shape: Shape) => {
-    dispatch({ type: "add", shape });
-    setSelectedId(shape.id);
-    setToolState("move");
-  }, []);
+  // Training aids: choose one, then click the video once per step.
+  const startPlacing = useCallback(
+    (preset: Preset) => {
+      dropUnfinishedAngle();
+      setSelectedId(null);
+      setPlacing({ preset, points: [] });
+    },
+    [dropUnfinishedAngle],
+  );
+
+  const cancelPlacing = useCallback(() => setPlacing(null), []);
+
+  const addPlacementPoint = useCallback(
+    (p: Point, size: Size) => {
+      if (!placing) return;
+      const points = [...placing.points, p];
+      if (points.length < placing.preset.steps.length) {
+        setPlacing({ ...placing, points });
+        return;
+      }
+      // Last click: create the aid, select it, and switch to Move so it can be adjusted.
+      const shape = createPresetShape(placing.preset, points, size);
+      dispatch({ type: "add", shape });
+      setPlacing(null);
+      setSelectedId(shape.id);
+      setToolState("move");
+    },
+    [placing],
+  );
+
+  // Keyboard shortcuts for computer use:
+  // Delete/Backspace removes the selection, Esc cancels, Ctrl/⌘+Z undoes.
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      const target = e.target as HTMLElement;
+      if (target.tagName === "INPUT" && (target as HTMLInputElement).type !== "range") return;
+
+      if ((e.key === "Delete" || e.key === "Backspace") && selectedId) {
+        e.preventDefault();
+        deleteSelected();
+      } else if (e.key === "Escape") {
+        setPlacing(null);
+        setSelectedId(null);
+      } else if (e.key.toLowerCase() === "z" && (e.metaKey || e.ctrlKey) && !e.shiftKey) {
+        e.preventDefault();
+        undo();
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [selectedId, deleteSelected, undo]);
 
   return {
     shapes: state.shapes,
@@ -132,7 +183,10 @@ export function useDrawing() {
     undo,
     clear,
     deleteSelected,
-    addAndSelect,
+    placing,
+    startPlacing,
+    cancelPlacing,
+    addPlacementPoint,
   };
 }
 

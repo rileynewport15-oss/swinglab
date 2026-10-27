@@ -7,8 +7,19 @@ A mobile-first site for reviewing golf swing, chip, and putt videos.
 - Upload a video, or record one with the phone camera
 - Custom player: play/pause, scrubber, 1x / 0.5x / 0.25x / ⅛x, frame-by-frame
 - Drawing layer: line, freehand, circle, box, angle (shows degrees), colors, undo, delete, clear
-- Preset training aids you can drag: swing plane, alignment, head circle, spine angle (shows tilt)
+- Training aids placed by clicking the video: swing plane (ball, then hands), alignment
+  (two ends), head circle (center of head), spine angle (hips, then neck; shows tilt)
+- Every drawing can be adjusted: drag its dots (48px grab areas), the line itself, or its label
 - Mode selector: Full Swing / Chip / Putt
+- Wide layout on computers (video left, tools right); stacked layout on phones
+
+### Keyboard shortcuts (computer)
+
+| Key | Action |
+| --- | --- |
+| Delete / Backspace | Delete the selected drawing |
+| Esc | Cancel placing an aid, or deselect |
+| Ctrl+Z / ⌘+Z | Undo |
 
 Videos never leave the device. They play from a temporary local URL.
 

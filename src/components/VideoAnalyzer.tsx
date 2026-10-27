@@ -33,34 +33,39 @@ export default function VideoAnalyzer({ videoUrl, onChangeVideo }: Props) {
   }, [videoUrl]);
 
   return (
-    <div className="flex flex-col gap-4">
-      {/* Stage: limited to 65% of screen height so controls stay visible on a phone */}
-      <div
-        className="no-select relative mx-auto w-full overflow-hidden rounded-3xl bg-black shadow-lg"
-        style={{ aspectRatio: aspect, maxWidth: `calc(65svh * ${aspect})` }}
-      >
-        <video
-          ref={videoRef}
-          // "#t=0.001" makes iPhones show the first frame instead of a black box
-          src={`${videoUrl}#t=0.001`}
-          playsInline
-          muted
-          preload="auto"
-          className="absolute inset-0 h-full w-full object-contain"
-        />
-        <DrawingCanvas drawing={drawing} />
+    // On wide screens: video and player on the left, tool panels on the right.
+    <div className="flex flex-col gap-4 lg:grid lg:grid-cols-[minmax(0,1fr)_380px] lg:items-start">
+      <div className="flex flex-col gap-4">
+        {/* Stage height: 65% of the screen on phones; on computers, as tall as fits
+            with the player controls still visible below it. */}
+        <div
+          className="no-select relative mx-auto w-full overflow-hidden rounded-3xl bg-black shadow-lg [--stage-h:65svh] lg:[--stage-h:calc(100svh-300px)]"
+          style={{ aspectRatio: aspect, maxWidth: `calc(var(--stage-h) * ${aspect})` }}
+        >
+          <video
+            ref={videoRef}
+            // "#t=0.001" makes iPhones show the first frame instead of a black box
+            src={`${videoUrl}#t=0.001`}
+            playsInline
+            muted
+            preload="auto"
+            className="absolute inset-0 h-full w-full object-contain"
+          />
+          <DrawingCanvas drawing={drawing} />
+        </div>
+        <PlayerControls videoRef={videoRef} />
       </div>
 
-      <PlayerControls videoRef={videoRef} />
-      <TrainingAidsMenu drawing={drawing} />
-      <DrawingToolbar drawing={drawing} />
-
-      <button
-        onClick={onChangeVideo}
-        className="min-h-12 rounded-2xl text-sm font-semibold text-fairway-700 underline-offset-4 active:underline"
-      >
-        Choose a different video
-      </button>
+      <div className="flex flex-col gap-4">
+        <TrainingAidsMenu drawing={drawing} />
+        <DrawingToolbar drawing={drawing} />
+        <button
+          onClick={onChangeVideo}
+          className="min-h-12 rounded-2xl text-sm font-semibold text-fairway-700 underline-offset-4 hover:underline"
+        >
+          Choose a different video
+        </button>
+      </div>
     </div>
   );
 }
