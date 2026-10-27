@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import {
   drawPlacementPoints,
   drawShape,
@@ -12,6 +12,7 @@ import {
   type Point,
   type Size,
 } from "@/lib/shapes";
+import { layoutLabels } from "@/lib/labels";
 import type { DrawingApi } from "@/hooks/useDrawing";
 
 // What the pointer is currently doing. Kept in a ref (not state) because it
@@ -21,7 +22,8 @@ type Drag =
   | { mode: "angle"; id: string; points: Point[]; index: number }
   | { mode: "handle"; id: string; start: Point; original: Point[]; index: number; moved: boolean }
   | { mode: "move"; id: string; start: Point; original: Point[]; moved: boolean }
-  | { mode: "label"; id: string; start: Point; original: Point; moved: boolean };
+  | { mode: "label"; id: string; start: Point; original: Point; moved: boolean }
+  | { mode: "radius"; id: string; center: Point; moved: boolean }; // dragging a circle's outline
 
 const MIN_SHAPE_PX = 6; // ignore accidental clicks when drawing
 const DELETE_BUTTON = 44; // px
@@ -29,12 +31,18 @@ const DELETE_BUTTON = 44; // px
 type Props = {
   drawing: DrawingApi;
   highlightAid?: AidKind | null; // make this training aid glow
+  videoRef: RefObject<HTMLVideoElement | null>;
+  // Is this training aid switched on at this moment of the video? (Aids panel settings)
+  aidShownAt: (aid: AidKind, time: number) => boolean;
+  showLabels: boolean;
 };
+
+const ALL_AIDS: AidKind[] = ["head", "spine", "stance", "hips", "plane"];
 
 // Transparent canvas laid exactly over the video, plus the on-video buttons
 // (placement instructions and delete). Drawings are redrawn whenever they
 // change, so they stay put while the video plays.
-export default function DrawingCanvas({ drawing, highlightAid = null }: Props) {
+export default function DrawingCanvas({ drawing, highlightAid = null, videoRef, aidShownAt, showLabels }: Props) {
   const {
     shapes,
     tool,
@@ -50,6 +58,37 @@ export default function DrawingCanvas({ drawing, highlightAid = null }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const dragRef = useRef<Drag | null>(null);
   const [size, setSize] = useState<Size>({ width: 0, height: 0 });
+
+  // Which aids are on screen right now. Aids can be timed to part of the
+  // swing, so check every animation frame and re-render only when it changes.
+  const [shownAids, setShownAids] = useState<string>(ALL_AIDS.join());
+  const aidShownRef = useRef(aidShownAt);
+  useEffect(() => {
+    aidShownRef.current = aidShownAt;
+  });
+  useEffect(() => {
+    let frameId = 0;
+    const tick = () => {
+      frameId = requestAnimationFrame(tick);
+      const time = videoRef.current?.currentTime ?? 0;
+      const key = ALL_AIDS.filter((a) => aidShownRef.current(a, time)).join();
+      setShownAids((prev) => (prev === key ? prev : key));
+    };
+    tick();
+    return () => cancelAnimationFrame(frameId);
+  }, [videoRef]);
+
+  // Shapes on screen now: everything the user drew, plus the aids that are switched on.
+  const visibleShapes = useMemo(() => {
+    const shown = new Set(shownAids.split(","));
+    return shapes.filter((s) => !s.aid || shown.has(s.aid));
+  }, [shapes, shownAids]);
+
+  // Place all labels together so they don't cover lines or each other.
+  const labels = useMemo(
+    () => (showLabels && size.width > 0 ? layoutLabels(visibleShapes, size) : new Map()),
+    [visibleShapes, size, showLabels],
+  );
 
   // Track the canvas's on-screen size (changes on window resize or rotation).
   useEffect(() => {
@@ -74,15 +113,16 @@ export default function DrawingCanvas({ drawing, highlightAid = null }: Props) {
     canvas.height = Math.round(size.height * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, size.width, size.height);
-    for (const shape of shapes) {
+    for (const shape of visibleShapes) {
       drawShape(ctx, shape, size, {
         selected: shape.id === selectedId,
         showHandles: tool === "move" && !placing,
         highlighted: highlightAid !== null && shape.aid === highlightAid,
+        label: labels.get(shape.id) ?? null,
       });
     }
     if (placing) drawPlacementPoints(ctx, placing.points, placing.preset.color, size);
-  }, [shapes, selectedId, size, tool, placing, highlightAid]);
+  }, [visibleShapes, labels, selectedId, size, tool, placing, highlightAid]);
 
   // Pointer position in video coordinates (0–1).
   function getPoint(e: React.PointerEvent): Point {
@@ -102,11 +142,11 @@ export default function DrawingCanvas({ drawing, highlightAid = null }: Props) {
   // Find the shape under the pointer. The selected shape is checked first,
   // then the rest from top (newest) to bottom.
   function findHit(p: Point) {
-    const ordered = [...shapes]
+    const ordered = [...visibleShapes]
       .reverse()
       .sort((a, b) => (a.id === selectedId ? -1 : b.id === selectedId ? 1 : 0));
     for (const shape of ordered) {
-      const hit = hitTest(shape, toPx(p, size), size);
+      const hit = hitTest(shape, toPx(p, size), size, labels.get(shape.id));
       if (hit) return { shape, hit };
     }
     return null;
@@ -121,7 +161,13 @@ export default function DrawingCanvas({ drawing, highlightAid = null }: Props) {
       return;
     }
     const found = findHit(p);
-    canvas.style.cursor = !found ? "default" : found.hit.type === "handle" ? "grab" : "move";
+    canvas.style.cursor = !found
+      ? "default"
+      : found.hit.type === "handle"
+        ? "grab"
+        : found.shape.kind === "circle" && found.hit.type === "body"
+          ? "nwse-resize" // dragging a circle's outline resizes it
+          : "move";
   }
 
   function onPointerDown(e: React.PointerEvent) {
@@ -150,10 +196,15 @@ export default function DrawingCanvas({ drawing, highlightAid = null }: Props) {
       const { shape, hit } = found;
       setSelectedId(shape.id);
       dispatch({ type: "saveHistory" });
-      // A circle's center handle moves the whole circle; its edge handle resizes it.
-      const isCircleCenter = shape.kind === "circle" && hit.type === "handle" && hit.index === 0;
+      // A circle's one handle (its center) moves it; dragging its outline resizes it.
+      const isCircleCenter = shape.kind === "circle" && hit.type === "handle";
       if (hit.type === "label") {
-        dragRef.current = { mode: "label", id: shape.id, start: p, original: shape.labelOffset ?? { x: 0, y: 0 }, moved: false };
+        // Start from wherever the label is drawn now, so it doesn't jump.
+        const r = labels.get(shape.id)!.rect;
+        const at = { x: (r.x + r.w / 2) / size.width, y: (r.y + r.h / 2) / size.height };
+        dragRef.current = { mode: "label", id: shape.id, start: p, original: at, moved: false };
+      } else if (shape.kind === "circle" && hit.type === "body") {
+        dragRef.current = { mode: "radius", id: shape.id, center: shape.points[0], moved: false };
       } else if (hit.type === "handle" && !isCircleCenter) {
         dragRef.current = { mode: "handle", id: shape.id, start: p, original: shape.points, index: hit.index, moved: false };
       } else {
@@ -205,6 +256,12 @@ export default function DrawingCanvas({ drawing, highlightAid = null }: Props) {
         dispatch({ type: "setPoints", id: drag.id, points: drag.points });
         break;
       }
+      case "radius": {
+        // Resize: the circle's edge follows the pointer, so radius = distance to it.
+        drag.moved = true;
+        dispatch({ type: "setPoints", id: drag.id, points: [drag.center, p] });
+        break;
+      }
       case "angle": {
         drag.points = drag.points.map((q, i) => (i === drag.index ? p : q));
         dispatch({ type: "setPoints", id: drag.id, points: drag.points });
@@ -221,9 +278,9 @@ export default function DrawingCanvas({ drawing, highlightAid = null }: Props) {
         drag.moved = true;
         if (drag.mode === "label") {
           dispatch({
-            type: "setLabelOffset",
+            type: "setLabelAt",
             id: drag.id,
-            offset: { x: drag.original.x + dx, y: drag.original.y + dy },
+            at: { x: drag.original.x + dx, y: drag.original.y + dy },
           });
           break;
         }
@@ -257,13 +314,13 @@ export default function DrawingCanvas({ drawing, highlightAid = null }: Props) {
       if (tooSmall) dispatch({ type: "cancelShape", id: drag.id });
     }
     // Selecting a shape without moving it shouldn't create an undo step.
-    if ((drag.mode === "move" || drag.mode === "handle" || drag.mode === "label") && !drag.moved) {
+    if (drag.mode !== "create" && drag.mode !== "angle" && !drag.moved) {
       dispatch({ type: "dropHistory" });
     }
   }
 
   // Place the delete button just above the selected shape's top-right corner.
-  const selected = shapes.find((s) => s.id === selectedId);
+  const selected = visibleShapes.find((s) => s.id === selectedId);
   let deletePos: { left: number; top: number } | null = null;
   if (selected && !placing && size.width > 0) {
     const b = shapeBounds(selected, size);

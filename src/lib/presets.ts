@@ -26,6 +26,7 @@ export const PRESETS: Preset[] = [
       kind: "line",
       color: "#facc15",
       label: "Plane",
+      aid: "plane",
       // A plane line runs from the ball up through the hands and beyond,
       // so extend it 60% past the hands.
       points: [ball, { x: hands.x + (hands.x - ball.x) * 0.6, y: hands.y + (hands.y - ball.y) * 0.6 }],
@@ -37,7 +38,7 @@ export const PRESETS: Preset[] = [
     description: "Along your toe line toward the target",
     color: "#ffffff",
     steps: ["Click one end of the line", "Click the other end (toward the target)"],
-    build: (points) => ({ kind: "line", color: "#ffffff", label: "Alignment", points }),
+    build: (points) => ({ kind: "line", color: "#ffffff", label: "Alignment", aid: "stance", points }),
   },
   {
     id: "head",
@@ -47,12 +48,13 @@ export const PRESETS: Preset[] = [
     steps: ["Click the center of your head"],
     build: ([center], size) => {
       // Start with a radius of 4% of the video height (about head-sized for a
-      // full-body shot), then the user can resize it with the edge handle.
+      // full-body shot); the user can resize it by dragging its outline.
       const radiusPx = size.height * 0.04;
       return {
         kind: "circle",
         color: "#38bdf8",
         label: "Head",
+        aid: "head",
         points: [center, { x: center.x + radiusPx / size.width, y: center.y }],
       };
     },
@@ -63,7 +65,7 @@ export const PRESETS: Preset[] = [
     description: "Hips, then base of neck. Shows the tilt",
     color: "#f472b6",
     steps: ["Click your hips (tailbone)", "Click the base of your neck"],
-    build: (points) => ({ kind: "line", color: "#f472b6", label: "Spine", showTilt: true, points }),
+    build: (points) => ({ kind: "line", color: "#f472b6", label: "Spine", showTilt: true, aid: "spine", points }),
   },
 ];
 

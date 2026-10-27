@@ -9,8 +9,6 @@ type Props = {
   analysis: PoseAnalysis;
   cameraAngle: CameraAngle;
   onChangeAngle: (angle: CameraAngle) => void;
-  showSkeleton: boolean;
-  onToggleSkeleton: () => void;
   addressTime: number | null;
   onJumpToAddress: () => void;
   onResetAids: () => void;
@@ -34,8 +32,7 @@ const TIPS = [
 // Results of the pose analysis: camera angle, skeleton toggle, and the
 // address frame — or friendly filming tips plus manual placement if it failed.
 export default function AnalysisPanel(props: Props) {
-  const { analysis, cameraAngle, onChangeAngle, showSkeleton, onToggleSkeleton, addressTime, onJumpToAddress, onResetAids } =
-    props;
+  const { analysis, cameraAngle, onChangeAngle, addressTime, onJumpToAddress, onResetAids } = props;
 
   if (analysis.status === "failed") {
     return (
@@ -63,7 +60,7 @@ export default function AnalysisPanel(props: Props) {
         <h2 className="font-bold text-fairway-900">Swing analysis</h2>
         <p className="text-xs text-fairway-700">
           {ready
-            ? "Aids are set at your address position and stay fixed while you swing. Drag them to fine-tune."
+            ? "Aids are set at your address position and stay fixed while you swing. Drag them to fine-tune, or use the Aids button on the video to choose which show and when."
             : "Finding your address position…"}
         </p>
       </div>
@@ -85,17 +82,6 @@ export default function AnalysisPanel(props: Props) {
         ))}
       </div>
 
-      <label className="flex min-h-12 cursor-pointer items-center justify-between gap-3 rounded-xl bg-fairway-50 px-3 hover:bg-fairway-100">
-        <span className="text-sm font-semibold text-fairway-900">Show live pose skeleton</span>
-        <input
-          type="checkbox"
-          role="switch"
-          checked={showSkeleton}
-          disabled={!ready}
-          onChange={onToggleSkeleton}
-          className="h-5 w-5 accent-fairway-600"
-        />
-      </label>
 
       {ready && (
         <div className="grid grid-cols-2 gap-2">

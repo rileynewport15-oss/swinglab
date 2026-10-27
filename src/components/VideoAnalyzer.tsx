@@ -8,6 +8,9 @@ import PoseOverlay from "./PoseOverlay";
 import AnalyzingOverlay from "./AnalyzingOverlay";
 import AnalysisPanel from "./AnalysisPanel";
 import ResultsPanel from "./ResultsPanel";
+import AidsPanel from "./AidsPanel";
+import { useAidSettings } from "@/hooks/useAidSettings";
+import { aidShownAt, type AidKey } from "@/lib/aidVisibility";
 import type { Marker } from "./MomentMarkers";
 import { useDrawing } from "@/hooks/useDrawing";
 import { usePoseAnalysis } from "@/hooks/usePoseAnalysis";
@@ -56,7 +59,8 @@ export default function VideoAnalyzer({ videoUrl, mode, onChangeVideo }: Props) 
   const drawing = useDrawing();
   const [cameraAngle, setCameraAngle] = useState<CameraAngle>(() => loadAngle() ?? "face-on");
   const [angleAsked, setAngleAsked] = useState(() => loadAngle() !== null);
-  const [showSkeleton, setShowSkeleton] = useState(false);
+  const [aidSettings, setAidSettings] = useAidSettings();
+  const [aidsOpen, setAidsOpen] = useState(false);
   const [moments, setMoments] = useState<KeyMoments | null>(null);
   const [activeFinding, setActiveFinding] = useState<string | null>(null);
   const [highlightAid, setHighlightAid] = useState<AidKind | null>(null);
@@ -127,6 +131,13 @@ export default function VideoAnalyzer({ videoUrl, mode, onChangeVideo }: Props) 
     }
   }
 
+  // Is an aid on screen at this moment? (Aids panel choices; a result the user
+  // clicked always shows its aid so the highlight is visible.)
+  function isAidShown(aid: AidKey, time: number) {
+    if (aid === highlightAid) return true;
+    return aidShownAt(aid, time, aidSettings, swingFound ? moments : null);
+  }
+
   function selectFinding(f: Finding) {
     setActiveFinding(f.id);
     setHighlightAid(f.aid ?? null);
@@ -166,10 +177,39 @@ export default function VideoAnalyzer({ videoUrl, mode, onChangeVideo }: Props) 
             preload="auto"
             className="absolute inset-0 h-full w-full object-contain"
           />
-          {analysis.status === "ready" && showSkeleton && (
-            <PoseOverlay videoRef={videoRef} track={analysis.track} />
+          {analysis.status === "ready" && aidSettings.visible.skeleton && (
+            <PoseOverlay
+              videoRef={videoRef}
+              track={analysis.track}
+              shownAt={(time) => isAidShown("skeleton", time)}
+            />
           )}
-          <DrawingCanvas drawing={drawing} highlightAid={highlightAid} />
+          <DrawingCanvas
+            drawing={drawing}
+            highlightAid={highlightAid}
+            videoRef={videoRef}
+            aidShownAt={isAidShown}
+            showLabels={aidSettings.labels}
+          />
+          {analysis.status !== "analyzing" && (
+            <button
+              onClick={() => setAidsOpen((o) => !o)}
+              aria-expanded={aidsOpen}
+              className="absolute right-2 top-2 z-10 flex min-h-11 items-center gap-1.5 rounded-full bg-fairway-900/85 px-4 text-sm font-semibold text-white shadow-lg ring-1 ring-white/30 hover:bg-fairway-900"
+            >
+              <span aria-hidden>👁</span> Aids
+            </button>
+          )}
+          {aidsOpen && analysis.status !== "analyzing" && (
+            <AidsPanel
+              settings={aidSettings}
+              onChange={setAidSettings}
+              cameraAngle={cameraAngle}
+              skeletonAvailable={analysis.status === "ready"}
+              timingAvailable={swingFound}
+              onClose={() => setAidsOpen(false)}
+            />
+          )}
           {analysis.status === "analyzing" && (
             <AnalyzingOverlay
               progress={analysis.progress}
@@ -195,8 +235,6 @@ export default function VideoAnalyzer({ videoUrl, mode, onChangeVideo }: Props) 
           analysis={analysis}
           cameraAngle={cameraAngle}
           onChangeAngle={changeAngle}
-          showSkeleton={showSkeleton}
-          onToggleSkeleton={() => setShowSkeleton((s) => !s)}
           addressTime={moments?.address ?? null}
           onJumpToAddress={() => moments && jumpTo(moments.address)}
           onResetAids={() => analysis.status === "ready" && placeAids(analysis.track, addressPose(), cameraAngle)}

@@ -16,7 +16,7 @@ type Action =
   | { type: "saveHistory" } // call before a drag that edits a shape
   | { type: "dropHistory" } // undo a saveHistory when nothing changed (e.g. a click)
   | { type: "setPoints"; id: string; points: Point[] } // live edits, no history
-  | { type: "setLabelOffset"; id: string; offset: Point } // live edits, no history
+  | { type: "setLabelAt"; id: string; at: Point } // live edits, no history
   | { type: "cancelShape"; id: string } // remove a just-added shape + its history
   | { type: "replaceAuto"; shapes: Shape[] } // swap all auto-placed aids for new ones
   | { type: "remove"; id: string }
@@ -44,8 +44,8 @@ function reducer(state: State, action: Action): State {
       return { ...state, past: state.past.slice(0, -1) };
     case "setPoints":
       return { ...state, shapes: updateShape(state, action.id, { points: action.points }) };
-    case "setLabelOffset":
-      return { ...state, shapes: updateShape(state, action.id, { labelOffset: action.offset }) };
+    case "setLabelAt":
+      return { ...state, shapes: updateShape(state, action.id, { labelAt: action.at }) };
     case "cancelShape":
       return {
         shapes: state.shapes.filter((s) => s.id !== action.id),

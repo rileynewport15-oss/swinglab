@@ -49,7 +49,7 @@ export function buildAutoAids(lms: Landmark[], angle: CameraAngle, track: PoseTr
   const leftEar = P(LM.leftEar);
   const rightEar = P(LM.rightEar);
   const radius = Math.max(distance(leftEar, rightEar) * 0.8, torso * 0.28);
-  // Nudge the circle up a little: ears sit low on the skull.
+  // Nudge the circle up a little more so it covers the top of the head.
   const center = findHeadCenter(lms, track);
   const headCenter = { x: center.x, y: center.y - radius * 0.15 };
   const aids: Shape[] = [
@@ -84,7 +84,7 @@ export function buildAutoAids(lms: Landmark[], angle: CameraAngle, track: PoseTr
       shape({
         kind: "line",
         color: COLORS.stance,
-        label: "Stance",
+        label: "Alignment",
         aid: "stance",
         points: [toVideo(extend(b, a, 0.35)), toVideo(extend(a, b, 0.35))],
       }),

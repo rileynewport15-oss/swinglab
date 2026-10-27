@@ -7,7 +7,7 @@
 
 export type Point = { x: number; y: number };
 export type Size = { width: number; height: number };
-type Rect = { x: number; y: number; w: number; h: number };
+export type Rect = { x: number; y: number; w: number; h: number };
 
 export type ShapeKind = "line" | "freehand" | "circle" | "box" | "angle";
 
@@ -24,7 +24,7 @@ export type Shape = {
   // freehand: every point along the stroke
   points: Point[];
   label?: string;
-  labelOffset?: Point; // how far the user dragged the label (video coordinates)
+  labelAt?: Point; // where the user dragged the label's center (video coordinates)
   showTilt?: boolean; // lines only: show degrees away from vertical
   auto?: boolean; // placed automatically from pose detection
   aid?: AidKind;
@@ -32,14 +32,20 @@ export type Shape = {
 
 export type Hit = { type: "handle"; index: number } | { type: "label" } | { type: "body" };
 
+// Where a label is drawn, worked out for all labels together (see labels.ts).
+export type LabelLayout = {
+  text: string;
+  rect: Rect;
+  connector: { from: Point; to: Point } | null; // thin line back to the aid
+};
+
 const LINE_WIDTH = 3;
 const HANDLE_RADIUS = 11; // drawn size of a selected shape's handle
 const HANDLE_HIT = 24; // grab radius → 48px target, above the 44px touch minimum
 const BODY_HIT = 14;
 const LABEL_FONT = "600 13px system-ui, sans-serif";
-const LABEL_HEIGHT = 24;
+export const LABEL_HEIGHT = 24;
 const LABEL_PADDING = 8;
-const LABEL_GAP = 22; // default distance between a line and its label
 
 export function newId() {
   return Math.random().toString(36).slice(2, 10);
@@ -49,16 +55,16 @@ export function toPx(p: Point, size: Size): Point {
   return { x: p.x * size.width, y: p.y * size.height };
 }
 
-function dist(a: Point, b: Point) {
+export function dist(a: Point, b: Point) {
   return Math.hypot(a.x - b.x, a.y - b.y);
 }
 
-function clamp(v: number, min: number, max: number) {
+export function clamp(v: number, min: number, max: number) {
   return Math.max(min, Math.min(v, max));
 }
 
 // Distance from point p to the line segment a-b.
-function distToSegment(p: Point, a: Point, b: Point) {
+export function distToSegment(p: Point, a: Point, b: Point) {
   const dx = b.x - a.x;
   const dy = b.y - a.y;
   const lenSq = dx * dx + dy * dy;
@@ -84,12 +90,18 @@ export function tiltFromVertical(a: Point, b: Point) {
 /** Which handles (drag points) a shape has. */
 function handleIndexes(shape: Shape): number[] {
   if (shape.kind === "freehand") return [];
+  // A circle has one handle in the middle (move); drag its outline to resize.
+  if (shape.kind === "circle") return [0];
   return shape.points.map((_, i) => i);
 }
 
 // ---------- Labels ----------
 
 let measureCtx: CanvasRenderingContext2D | null = null;
+export function labelWidth(text: string) {
+  return textWidth(text) + LABEL_PADDING * 2;
+}
+
 function textWidth(text: string) {
   measureCtx ??= document.createElement("canvas").getContext("2d");
   if (!measureCtx) return text.length * 8;
@@ -98,55 +110,13 @@ function textWidth(text: string) {
 }
 
 /** The text shown on a shape's label, e.g. "Spine 32°". Empty if none. */
-function labelText(shape: Shape, size: Size) {
+export function labelText(shape: Shape, size: Size) {
   let text = shape.label ?? "";
   if (shape.kind === "line" && shape.showTilt && shape.points.length === 2) {
     const [a, b] = shape.points.map((p) => toPx(p, size));
     text += `${text ? " " : ""}${Math.round(tiltFromVertical(a, b))}°`;
   }
   return text;
-}
-
-/** Where the label sits (in pixels), or null if the shape has no label. */
-export function labelRect(shape: Shape, size: Size): Rect | null {
-  const text = labelText(shape, size);
-  if (!text || shape.points.length < 2) return null;
-  const pts = shape.points.map((q) => toPx(q, size));
-
-  const w = textWidth(text) + LABEL_PADDING * 2;
-
-  // Default spot: just above circles and boxes, and beside lines (not on top of them).
-  let anchor: Point;
-  if (shape.kind === "circle") {
-    anchor = { x: pts[0].x, y: pts[0].y - dist(pts[0], pts[1]) - LABEL_GAP };
-  } else if (shape.kind === "box") {
-    anchor = { x: (pts[0].x + pts[1].x) / 2, y: Math.min(pts[0].y, pts[1].y) - LABEL_GAP };
-  } else {
-    const a = pts[0];
-    const b = pts[pts.length - 1];
-    const len = dist(a, b) || 1;
-    // Unit vector at a right angle to the line, pointing upward.
-    let nx = -(b.y - a.y) / len;
-    let ny = (b.x - a.x) / len;
-    if (ny > 0) {
-      nx = -nx;
-      ny = -ny;
-    }
-    // Move far enough sideways that the whole label clears the line.
-    const gap = Math.abs(nx) * (w / 2) + Math.abs(ny) * (LABEL_HEIGHT / 2) + 8;
-    anchor = { x: (a.x + b.x) / 2 + nx * gap, y: (a.y + b.y) / 2 + ny * gap };
-  }
-
-  const offset = shape.labelOffset ?? { x: 0, y: 0 };
-  const cx = anchor.x + offset.x * size.width;
-  const cy = anchor.y + offset.y * size.height;
-  return {
-    // Keep labels inside the video.
-    x: clamp(cx - w / 2, 2, size.width - w - 2),
-    y: clamp(cy - LABEL_HEIGHT / 2, 2, size.height - LABEL_HEIGHT - 2),
-    w,
-    h: LABEL_HEIGHT,
-  };
 }
 
 /** Pixel bounding box of a shape (used to place its delete button). */
@@ -165,11 +135,23 @@ export function shapeBounds(shape: Shape, size: Size): Rect {
 
 // ---------- Hit testing ----------
 
-/** Is a pointer at `p` (pixels) on this shape? Handles win, then the label, then the body. */
-export function hitTest(shape: Shape, p: Point, size: Size): Hit | null {
+/**
+ * Is a pointer at `p` (pixels) on this shape? Handles win, then the label
+ * (if shown), then the body.
+ */
+export function hitTest(shape: Shape, p: Point, size: Size, label?: LabelLayout | null): Hit | null {
   const pts = shape.points.map((q) => toPx(q, size));
 
-  // Pick the nearest handle in reach (a small circle's two handles overlap).
+  // Circles: the inner part grabs the center handle (move), a band around the
+  // outline resizes. Splitting by distance keeps both usable on small circles.
+  if (shape.kind === "circle") {
+    const d = dist(p, pts[0]);
+    const r = dist(pts[0], pts[1]);
+    if (d <= Math.max(8, Math.min(HANDLE_HIT, r - 8))) return { type: "handle", index: 0 };
+    if (Math.abs(d - r) <= BODY_HIT) return { type: "body" };
+  }
+
+  // Pick the nearest handle in reach.
   let nearest: { index: number; d: number } | null = null;
   for (const i of handleIndexes(shape)) {
     const d = dist(p, pts[i]);
@@ -177,13 +159,12 @@ export function hitTest(shape: Shape, p: Point, size: Size): Hit | null {
   }
   if (nearest) return { type: "handle", index: nearest.index };
 
-  const label = labelRect(shape, size);
   if (
     label &&
-    p.x >= label.x - 4 &&
-    p.x <= label.x + label.w + 4 &&
-    p.y >= label.y - 4 &&
-    p.y <= label.y + label.h + 4
+    p.x >= label.rect.x - 4 &&
+    p.x <= label.rect.x + label.rect.w + 4 &&
+    p.y >= label.rect.y - 4 &&
+    p.y <= label.rect.y + label.rect.h + 4
   ) {
     return { type: "label" };
   }
@@ -219,6 +200,7 @@ type DrawOptions = {
   selected: boolean;
   showHandles: boolean; // small dots on every shape so users know what's draggable
   highlighted?: boolean; // glow, e.g. when a result points at this aid
+  label?: LabelLayout | null; // where to draw the label (null = hidden)
 };
 
 /** Draw one shape onto the canvas. */
@@ -226,7 +208,7 @@ export function drawShape(
   ctx: CanvasRenderingContext2D,
   shape: Shape,
   size: Size,
-  { selected, showHandles, highlighted }: DrawOptions,
+  { selected, showHandles, highlighted, label }: DrawOptions,
 ) {
   const pts = shape.points.map((q) => toPx(q, size));
   if (pts.length === 0) return;
@@ -292,8 +274,22 @@ export function drawShape(
     }
   }
 
-  const rect = labelRect(shape, size);
-  if (rect) pill(ctx, labelText(shape, size), rect, shape.color, selected);
+  if (label) {
+    if (label.connector) {
+      // Thin line from a label that had to move away, back to its aid.
+      ctx.save();
+      ctx.shadowBlur = 0;
+      ctx.setLineDash([3, 3]);
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = shape.color;
+      ctx.beginPath();
+      ctx.moveTo(label.connector.from.x, label.connector.from.y);
+      ctx.lineTo(label.connector.to.x, label.connector.to.y);
+      ctx.stroke();
+      ctx.restore();
+    }
+    pill(ctx, label.text, label.rect, shape.color, selected);
+  }
 
   ctx.shadowBlur = 0;
   if (selected) {
@@ -345,7 +341,8 @@ export function drawPlacementPoints(ctx: CanvasRenderingContext2D, points: Point
 function handle(ctx: CanvasRenderingContext2D, p: Point, color: string, moveCross: boolean) {
   ctx.beginPath();
   ctx.arc(p.x, p.y, HANDLE_RADIUS, 0, Math.PI * 2);
-  ctx.fillStyle = "white";
+  // A circle's move handle sits over the golfer's face, so keep it see-through.
+  ctx.fillStyle = moveCross ? "rgba(255,255,255,0.35)" : "white";
   ctx.fill();
   ctx.lineWidth = 3;
   ctx.strokeStyle = color;

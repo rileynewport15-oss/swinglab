@@ -69,12 +69,18 @@ export function handsPosition(lms: Landmark[], track: Pick<PoseTrack, "width" | 
   };
 }
 
-/** Middle of the head, from the ears and nose, in video pixels. */
+/**
+ * Middle of the head, from the ears and nose, in video pixels.
+ *
+ * MediaPipe's "ear" points sit low and forward on the side of the face, and
+ * the skull extends behind and above them (especially when the golfer is
+ * turned sideways and looking down at the ball). So we start at the ears and
+ * move away from the nose, toward the back and top of the head.
+ */
 export function headCenter(lms: Landmark[], track: Pick<PoseTrack, "width" | "height">): Px {
   const ears = mid(px(lms, LM.leftEar, track), px(lms, LM.rightEar, track));
   const nose = px(lms, LM.nose, track);
-  // The middle of the skull sits a little toward the face from the ears.
-  return { x: ears.x + (nose.x - ears.x) * 0.25, y: ears.y + (nose.y - ears.y) * 0.25 };
+  return { x: ears.x + (ears.x - nose.x) * 0.3, y: ears.y + (ears.y - nose.y) * 0.3 };
 }
 
 /** The pose frame closest to a time (only frames where a golfer was found). */
