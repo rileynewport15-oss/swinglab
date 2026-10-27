@@ -48,3 +48,10 @@ input[type="range"].scrubber::-moz-range-thumb {
   background: var(--color-fairway-600);
   border: 3px solid white;
 }
+
+/* Stop text-selection highlights and the iPhone long-press menu while drawing */
+.no-select {
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}

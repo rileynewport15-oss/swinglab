@@ -2,16 +2,20 @@
 
 import { useEffect, useRef, useState } from "react";
 import PlayerControls from "./PlayerControls";
+import DrawingCanvas from "./DrawingCanvas";
+import DrawingToolbar from "./DrawingToolbar";
+import { useDrawing } from "@/hooks/useDrawing";
 
 type Props = {
   videoUrl: string;
   onChangeVideo: () => void;
 };
 
-// The review screen: the video (with drawings on top) plus all the controls.
+// The review screen: the video (with drawings on top) plus all the controls. 
 export default function VideoAnalyzer({ videoUrl, onChangeVideo }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [aspect, setAspect] = useState(9 / 16);
+  const drawing = useDrawing();
 
   // Match the stage's shape to the video so drawings line up with the picture.
   useEffect(() => {
@@ -31,7 +35,7 @@ export default function VideoAnalyzer({ videoUrl, onChangeVideo }: Props) {
     <div className="flex flex-col gap-4">
       {/* Stage: limited to 65% of screen height so controls stay visible on a phone */}
       <div
-        className="relative mx-auto w-full overflow-hidden rounded-3xl bg-black shadow-lg"
+        className="no-select relative mx-auto w-full overflow-hidden rounded-3xl bg-black shadow-lg"
         style={{ aspectRatio: aspect, maxWidth: `calc(65svh * ${aspect})` }}
       >
         <video
@@ -43,9 +47,11 @@ export default function VideoAnalyzer({ videoUrl, onChangeVideo }: Props) {
           preload="auto"
           className="absolute inset-0 h-full w-full object-contain"
         />
+        <DrawingCanvas drawing={drawing} />
       </div>
 
       <PlayerControls videoRef={videoRef} />
+      <DrawingToolbar drawing={drawing} />
 
       <button
         onClick={onChangeVideo}
