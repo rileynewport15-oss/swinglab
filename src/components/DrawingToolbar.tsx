@@ -55,7 +55,7 @@ export default function DrawingToolbar({ drawing }: Props) {
       </div>
 
       {/* Colors: quick swatches plus a full color picker */}
-      <div className="flex items-center gap-2" role="group" aria-label="Color">
+      <div className="flex flex-wrap items-center justify-between gap-1.5" role="group" aria-label="Color">
         {COLORS.map((c) => (
           <button
             key={c}

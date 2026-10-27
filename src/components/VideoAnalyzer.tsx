@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import PlayerControls from "./PlayerControls";
 import DrawingCanvas from "./DrawingCanvas";
 import DrawingToolbar from "./DrawingToolbar";
+import TrainingAidsMenu from "./TrainingAidsMenu";
 import { useDrawing } from "@/hooks/useDrawing";
 
 type Props = {
@@ -11,7 +12,7 @@ type Props = {
   onChangeVideo: () => void;
 };
 
-// The review screen: the video (with drawings on top) plus all the controls. 
+// The review screen: the video (with drawings on top) plus all the controls.
 export default function VideoAnalyzer({ videoUrl, onChangeVideo }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [aspect, setAspect] = useState(9 / 16);
@@ -51,6 +52,7 @@ export default function VideoAnalyzer({ videoUrl, onChangeVideo }: Props) {
       </div>
 
       <PlayerControls videoRef={videoRef} />
+      <TrainingAidsMenu drawing={drawing} />
       <DrawingToolbar drawing={drawing} />
 
       <button
