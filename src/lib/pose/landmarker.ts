@@ -32,9 +32,17 @@ export function getPoseLandmarker(): Promise<PoseLandmarker> {
 }
 
 // MediaPipe needs every timestamp to be larger than the one before, even
-// across different videos, so we hand out increasing numbers.
+// across passes and videos. It also smooths landmarks over time, so the
+// timestamps should follow the video's own clock. Each pass gets its own
+// starting point after the previous one, with a gap so smoothing starts fresh.
 let lastTimestamp = 0;
-export function nextTimestamp() {
-  lastTimestamp = Math.max(performance.now(), lastTimestamp + 1);
-  return lastTimestamp;
+export function startPass(): (videoSeconds: number) => number {
+  const base = lastTimestamp + 1000;
+  let first: number | null = null;
+  return (videoSeconds) => {
+    first ??= videoSeconds;
+    const ts = base + (videoSeconds - first) * 1000;
+    lastTimestamp = Math.max(lastTimestamp + 1, ts);
+    return lastTimestamp;
+  };
 }

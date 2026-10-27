@@ -1,6 +1,8 @@
 "use client";
 
-export type Mode = "full-swing" | "chip" | "putt";
+import type { ShotMode } from "@/config/analysisConfig";
+
+export type Mode = ShotMode;
 
 export const MODES: { id: Mode; label: string; icon: string }[] = [
   { id: "full-swing", label: "Full Swing", icon: "🏌️" },

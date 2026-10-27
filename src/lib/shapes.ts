@@ -11,6 +11,9 @@ type Rect = { x: number; y: number; w: number; h: number };
 
 export type ShapeKind = "line" | "freehand" | "circle" | "box" | "angle";
 
+// Which automatic training aid a shape is (used to highlight it from results).
+export type AidKind = "head" | "spine" | "stance" | "hips" | "plane";
+
 export type Shape = {
   id: string;
   kind: ShapeKind;
@@ -24,6 +27,7 @@ export type Shape = {
   labelOffset?: Point; // how far the user dragged the label (video coordinates)
   showTilt?: boolean; // lines only: show degrees away from vertical
   auto?: boolean; // placed automatically from pose detection
+  aid?: AidKind;
 };
 
 export type Hit = { type: "handle"; index: number } | { type: "label" } | { type: "body" };
@@ -214,6 +218,7 @@ export function hitTest(shape: Shape, p: Point, size: Size): Hit | null {
 type DrawOptions = {
   selected: boolean;
   showHandles: boolean; // small dots on every shape so users know what's draggable
+  highlighted?: boolean; // glow, e.g. when a result points at this aid
 };
 
 /** Draw one shape onto the canvas. */
@@ -221,7 +226,7 @@ export function drawShape(
   ctx: CanvasRenderingContext2D,
   shape: Shape,
   size: Size,
-  { selected, showHandles }: DrawOptions,
+  { selected, showHandles, highlighted }: DrawOptions,
 ) {
   const pts = shape.points.map((q) => toPx(q, size));
   if (pts.length === 0) return;
@@ -235,6 +240,12 @@ export function drawShape(
   // A soft shadow keeps lines visible on both bright sky and dark grass.
   ctx.shadowColor = "rgba(0,0,0,0.6)";
   ctx.shadowBlur = 3;
+  if (highlighted) {
+    // A thick, glowing line draws the eye to the aid a result is about.
+    ctx.shadowColor = shape.color;
+    ctx.shadowBlur = 18;
+    ctx.lineWidth = LINE_WIDTH + 3;
+  }
 
   ctx.beginPath();
   switch (shape.kind) {

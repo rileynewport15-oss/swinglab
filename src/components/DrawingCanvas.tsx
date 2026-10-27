@@ -8,6 +8,7 @@ import {
   newId,
   shapeBounds,
   toPx,
+  type AidKind,
   type Point,
   type Size,
 } from "@/lib/shapes";
@@ -25,12 +26,15 @@ type Drag =
 const MIN_SHAPE_PX = 6; // ignore accidental clicks when drawing
 const DELETE_BUTTON = 44; // px
 
-type Props = { drawing: DrawingApi };
+type Props = {
+  drawing: DrawingApi;
+  highlightAid?: AidKind | null; // make this training aid glow
+};
 
 // Transparent canvas laid exactly over the video, plus the on-video buttons
 // (placement instructions and delete). Drawings are redrawn whenever they
 // change, so they stay put while the video plays.
-export default function DrawingCanvas({ drawing }: Props) {
+export default function DrawingCanvas({ drawing, highlightAid = null }: Props) {
   const {
     shapes,
     tool,
@@ -74,10 +78,11 @@ export default function DrawingCanvas({ drawing }: Props) {
       drawShape(ctx, shape, size, {
         selected: shape.id === selectedId,
         showHandles: tool === "move" && !placing,
+        highlighted: highlightAid !== null && shape.aid === highlightAid,
       });
     }
     if (placing) drawPlacementPoints(ctx, placing.points, placing.preset.color, size);
-  }, [shapes, selectedId, size, tool, placing]);
+  }, [shapes, selectedId, size, tool, placing, highlightAid]);
 
   // Pointer position in video coordinates (0–1).
   function getPoint(e: React.PointerEvent): Point {

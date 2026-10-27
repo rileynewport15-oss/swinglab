@@ -11,6 +11,7 @@ type Props = {
   onChangeAngle: (angle: CameraAngle) => void;
   showSkeleton: boolean;
   onToggleSkeleton: () => void;
+  addressTime: number | null;
   onJumpToAddress: () => void;
   onResetAids: () => void;
   drawing: DrawingApi;
@@ -33,7 +34,7 @@ const TIPS = [
 // Results of the pose analysis: camera angle, skeleton toggle, and the
 // address frame — or friendly filming tips plus manual placement if it failed.
 export default function AnalysisPanel(props: Props) {
-  const { analysis, cameraAngle, onChangeAngle, showSkeleton, onToggleSkeleton, onJumpToAddress, onResetAids } =
+  const { analysis, cameraAngle, onChangeAngle, showSkeleton, onToggleSkeleton, addressTime, onJumpToAddress, onResetAids } =
     props;
 
   if (analysis.status === "failed") {
@@ -102,7 +103,7 @@ export default function AnalysisPanel(props: Props) {
             onClick={onJumpToAddress}
             className="min-h-12 rounded-xl bg-fairway-50 text-sm font-semibold text-fairway-800 hover:bg-fairway-100"
           >
-            Go to address ({analysis.address.time.toFixed(2)}s)
+            Go to address ({(addressTime ?? analysis.address.time).toFixed(2)}s)
           </button>
           <button
             onClick={onResetAids}

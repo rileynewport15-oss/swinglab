@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, type RefObject } from "react";
+import MomentMarkers, { type Marker } from "./MomentMarkers";
 
 const SPEEDS = [1, 0.5, 0.25, 0.125];
 
@@ -10,11 +11,13 @@ const FRAME_STEP = 1 / 30;
 
 type Props = {
   videoRef: RefObject<HTMLVideoElement | null>;
+  markers?: Marker[];
+  onMarkerMove?: (id: string, time: number, done: boolean) => void;
 };
 
 // Play/pause, scrubber, speed and frame-step controls for the <video> above it.
 // The video element itself lives in VideoAnalyzer so the drawing canvas can sit on top.
-export default function PlayerControls({ videoRef }: Props) {
+export default function PlayerControls({ videoRef, markers, onMarkerMove }: Props) {
   const [playing, setPlaying] = useState(false);
   const [time, setTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -96,17 +99,34 @@ export default function PlayerControls({ videoRef }: Props) {
   return (
     <div className="flex flex-col gap-3 rounded-3xl bg-white p-4 shadow-sm">
       {/* Scrubber */}
-      <div className="flex items-center gap-3">
-        <input
-          type="range"
-          className="scrubber flex-1"
-          aria-label="Video position"
-          min={0}
-          max={duration || 0}
-          step={0.001}
-          value={time}
-          onChange={(e) => seek(Number(e.target.value))}
-        />
+      <div className="flex items-end gap-3">
+        <div className="flex-1">
+          {markers && markers.length > 0 && (
+            <MomentMarkers
+              duration={duration}
+              markers={markers}
+              onSeek={(t) => {
+                videoRef.current?.pause();
+                seek(t);
+              }}
+              onMove={(id, t, done) => {
+                videoRef.current?.pause();
+                seek(t);
+                onMarkerMove?.(id, t, done);
+              }}
+            />
+          )}
+          <input
+            type="range"
+            className="scrubber w-full"
+            aria-label="Video position"
+            min={0}
+            max={duration || 0}
+            step={0.001}
+            value={time}
+            onChange={(e) => seek(Number(e.target.value))}
+          />
+        </div>
         <span className="w-24 text-right text-sm tabular-nums text-fairway-700">
           {time.toFixed(2)} / {duration.toFixed(2)}s
         </span>

@@ -1,14 +1,21 @@
-import { getPoseLandmarker, nextTimestamp } from "./landmarker";
+import { getPoseLandmarker, startPass } from "./landmarker";
 import type { PoseFrame, PoseTrack } from "./landmarks";
 
 const MAX_SECONDS = 40; // long clips: only the start matters for address + swing
 const TARGET_SAMPLES = 300;
 const MIN_FPS = 6;
 const MAX_FPS = 15;
+// MediaPipe smooths landmarks between frames, so the first few frames of a
+// pass lag behind. Start this many seconds early and throw those frames away.
+const WARM_UP = 0.3;
 
 type Options = {
   onProgress?: (fraction: number) => void;
   signal?: AbortSignal;
+  // Analyze only part of the video, at a chosen rate (used to look closely at the swing).
+  start?: number;
+  end?: number;
+  fps?: number;
 };
 
 /**
@@ -16,7 +23,10 @@ type Options = {
  * analyzed frame. Uses its own hidden <video> element so the player the user
  * sees is never touched.
  */
-export async function analyzeVideo(url: string, { onProgress, signal }: Options = {}): Promise<PoseTrack> {
+export async function analyzeVideo(
+  url: string,
+  { onProgress, signal, start = 0, end, fps: requestedFps }: Options = {},
+): Promise<PoseTrack> {
   const landmarker = await getPoseLandmarker();
   const video = document.createElement("video");
   video.muted = true;
@@ -27,22 +37,25 @@ export async function analyzeVideo(url: string, { onProgress, signal }: Options 
   try {
     await waitFor(video, "loadeddata");
     const duration = await getDuration(video);
-    const length = Math.min(duration, MAX_SECONDS);
+    const stop = Math.min(end ?? duration, duration, start + MAX_SECONDS);
+    const length = stop - start;
     // Short clips get up to 15 frames per second; long ones fewer, so analysis stays quick.
-    const fps = Math.min(MAX_FPS, Math.max(MIN_FPS, TARGET_SAMPLES / length));
+    const fps = requestedFps ?? Math.min(MAX_FPS, Math.max(MIN_FPS, TARGET_SAMPLES / length));
     const step = 1 / fps;
 
     const frames: PoseFrame[] = [];
-    for (let t = 0; t < length; t += step) {
+    const timestamp = startPass();
+    for (let t = Math.max(0, start - WARM_UP); t < stop; t += step) {
       if (signal?.aborted) throw new DOMException("Analysis cancelled", "AbortError");
       await seek(video, t);
-      const result = landmarker.detectForVideo(video, nextTimestamp());
+      const result = landmarker.detectForVideo(video, timestamp(t));
+      if (t < start - 1e-6) continue; // warm-up frame
       const pose = result.landmarks[0];
       frames.push({
         time: video.currentTime,
         landmarks: pose ? pose.map(({ x, y, visibility }) => ({ x, y, visibility })) : null,
       });
-      onProgress?.(Math.min(1, (t + step) / length));
+      onProgress?.(Math.min(1, (t - start + step) / length));
     }
 
     return { frames, width: video.videoWidth, height: video.videoHeight, step };
@@ -75,4 +88,19 @@ async function getDuration(video: HTMLVideoElement) {
   const duration = video.duration;
   await seek(video, 0);
   return Number.isFinite(duration) ? duration : video.currentTime;
+}
+
+/**
+ * Swap in a closer look at part of the video: frames from `detail` replace
+ * the coarse frames in the time range it covers.
+ */
+export function mergeDetail(coarse: PoseTrack, detail: PoseTrack): PoseTrack {
+  if (detail.frames.length === 0) return coarse;
+  const from = detail.frames[0].time;
+  const to = detail.frames[detail.frames.length - 1].time;
+  const frames = [
+    ...coarse.frames.filter((f) => f.time < from || f.time > to),
+    ...detail.frames,
+  ].sort((a, b) => a.time - b.time);
+  return { ...coarse, frames };
 }

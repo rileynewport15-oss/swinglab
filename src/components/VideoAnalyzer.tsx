@@ -1,22 +1,35 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import PlayerControls from "./PlayerControls";
 import DrawingCanvas from "./DrawingCanvas";
 import DrawingToolbar from "./DrawingToolbar";
 import PoseOverlay from "./PoseOverlay";
 import AnalyzingOverlay from "./AnalyzingOverlay";
 import AnalysisPanel from "./AnalysisPanel";
+import ResultsPanel from "./ResultsPanel";
+import type { Marker } from "./MomentMarkers";
 import { useDrawing } from "@/hooks/useDrawing";
 import { usePoseAnalysis } from "@/hooks/usePoseAnalysis";
 import { buildAutoAids, type CameraAngle } from "@/lib/pose/autoAids";
-import type { AddressFrame } from "@/lib/pose/address";
-import type { PoseTrack } from "@/lib/pose/landmarks";
+import { nearestFrame, type Landmark, type PoseTrack } from "@/lib/pose/landmarks";
+import { MOMENT_LABELS, type KeyMoments, type MomentId } from "@/lib/analysis/keyMoments";
+import { analyzeSwing, type Finding } from "@/lib/analysis/metrics";
+import type { ShotMode } from "@/config/analysisConfig";
+import type { AidKind } from "@/lib/shapes";
 
 type Props = {
   videoUrl: string;
+  mode: ShotMode;
   onChangeVideo: () => void;
 };
+
+const MARKER_STYLE: Record<MomentId, { short: string; color: string }> = {
+  address: { short: "A", color: "#0ea5e9" },
+  top: { short: "T", color: "#f59e0b" },
+  impact: { short: "I", color: "#ef4444" },
+};
+const MIN_GAP = 0.03; // seconds kept between markers so their order stays Address → Top → Impact
 
 // The camera angle is asked once, then remembered in this browser.
 const ANGLE_KEY = "swinglab.cameraAngle";
@@ -37,13 +50,16 @@ function saveAngle(angle: CameraAngle) {
 }
 
 // The review screen: the video (with pose skeleton and aids on top) plus all the controls.
-export default function VideoAnalyzer({ videoUrl, onChangeVideo }: Props) {
+export default function VideoAnalyzer({ videoUrl, mode, onChangeVideo }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [aspect, setAspect] = useState(9 / 16);
   const drawing = useDrawing();
   const [cameraAngle, setCameraAngle] = useState<CameraAngle>(() => loadAngle() ?? "face-on");
   const [angleAsked, setAngleAsked] = useState(() => loadAngle() !== null);
   const [showSkeleton, setShowSkeleton] = useState(false);
+  const [moments, setMoments] = useState<KeyMoments | null>(null);
+  const [activeFinding, setActiveFinding] = useState<string | null>(null);
+  const [highlightAid, setHighlightAid] = useState<AidKind | null>(null);
 
   function jumpTo(time: number) {
     const video = videoRef.current;
@@ -52,13 +68,14 @@ export default function VideoAnalyzer({ videoUrl, onChangeVideo }: Props) {
     video.currentTime = time;
   }
 
-  function placeAids(track: PoseTrack, address: AddressFrame, angle: CameraAngle) {
-    drawing.placeAutoAids(buildAutoAids(address.landmarks, angle, track));
+  function placeAids(track: PoseTrack, addressPose: Landmark[], angle: CameraAngle) {
+    drawing.placeAutoAids(buildAutoAids(addressPose, angle, track));
   }
 
-  // When analysis finishes: place the aids and show the address frame.
-  const analysis = usePoseAnalysis(videoUrl, (track, address) => {
-    placeAids(track, address, cameraAngle);
+  // When analysis finishes: place the aids, mark the key moments, show the address frame.
+  const analysis = usePoseAnalysis(videoUrl, (track, address, found) => {
+    placeAids(track, address.landmarks, cameraAngle);
+    setMoments(found ?? { address: address.time, top: NaN, impact: NaN });
     jumpTo(address.time);
     saveAngle(cameraAngle); // counts as answered, even if the default was kept
     setAngleAsked(true);
@@ -68,7 +85,52 @@ export default function VideoAnalyzer({ videoUrl, onChangeVideo }: Props) {
     setCameraAngle(angle);
     saveAngle(angle);
     setAngleAsked(true);
-    if (analysis.status === "ready") placeAids(analysis.track, analysis.address, angle);
+    if (analysis.status === "ready") placeAids(analysis.track, addressPose(), angle);
+  }
+
+  // The pose at the (possibly user-adjusted) address marker.
+  function addressPose(): Landmark[] {
+    if (analysis.status !== "ready") return [];
+    const time = moments?.address ?? analysis.address.time;
+    return nearestFrame(analysis.track, time)?.landmarks ?? analysis.address.landmarks;
+  }
+
+  const swingFound = moments !== null && Number.isFinite(moments.top) && Number.isFinite(moments.impact);
+
+  // Findings recalculate instantly when a marker, the mode or the camera angle changes.
+  const findings = useMemo(
+    () =>
+      analysis.status === "ready" && swingFound && moments
+        ? analyzeSwing({ track: analysis.track, moments, mode, angle: cameraAngle })
+        : [],
+    [analysis, swingFound, moments, mode, cameraAngle],
+  );
+
+  const markers: Marker[] = moments
+    ? (Object.keys(MOMENT_LABELS) as MomentId[])
+        .filter((id) => Number.isFinite(moments[id]))
+        .map((id) => ({ id, label: MOMENT_LABELS[id], time: moments[id], ...MARKER_STYLE[id] }))
+    : [];
+
+  function moveMarker(id: string, time: number, done: boolean) {
+    if (!moments) return;
+    const m = { ...moments };
+    // Keep the order Address → Top → Impact.
+    if (id === "address") m.address = Math.min(time, (Number.isFinite(m.top) ? m.top : Infinity) - MIN_GAP);
+    if (id === "top") m.top = Math.min(Math.max(time, m.address + MIN_GAP), m.impact - MIN_GAP);
+    if (id === "impact") m.impact = Math.max(time, m.top + MIN_GAP);
+    setMoments(m);
+    // Aids are anchored to address, so move them when the address marker is dropped.
+    if (id === "address" && done && analysis.status === "ready") {
+      const pose = nearestFrame(analysis.track, m.address)?.landmarks;
+      if (pose) placeAids(analysis.track, pose, cameraAngle);
+    }
+  }
+
+  function selectFinding(f: Finding) {
+    setActiveFinding(f.id);
+    setHighlightAid(f.aid ?? null);
+    jumpTo(f.time);
   }
 
   // Match the stage's shape to the video so drawings line up with the picture.
@@ -107,7 +169,7 @@ export default function VideoAnalyzer({ videoUrl, onChangeVideo }: Props) {
           {analysis.status === "ready" && showSkeleton && (
             <PoseOverlay videoRef={videoRef} track={analysis.track} />
           )}
-          <DrawingCanvas drawing={drawing} />
+          <DrawingCanvas drawing={drawing} highlightAid={highlightAid} />
           {analysis.status === "analyzing" && (
             <AnalyzingOverlay
               progress={analysis.progress}
@@ -117,20 +179,27 @@ export default function VideoAnalyzer({ videoUrl, onChangeVideo }: Props) {
             />
           )}
         </div>
-        <PlayerControls videoRef={videoRef} />
+        <PlayerControls videoRef={videoRef} markers={markers} onMarkerMove={moveMarker} />
       </div>
 
       <div className="flex flex-col gap-4">
+        {analysis.status === "ready" && (
+          <ResultsPanel
+            findings={findings}
+            swingFound={swingFound}
+            activeId={activeFinding}
+            onSelect={selectFinding}
+          />
+        )}
         <AnalysisPanel
           analysis={analysis}
           cameraAngle={cameraAngle}
           onChangeAngle={changeAngle}
           showSkeleton={showSkeleton}
           onToggleSkeleton={() => setShowSkeleton((s) => !s)}
-          onJumpToAddress={() => analysis.status === "ready" && jumpTo(analysis.address.time)}
-          onResetAids={() =>
-            analysis.status === "ready" && placeAids(analysis.track, analysis.address, cameraAngle)
-          }
+          addressTime={moments?.address ?? null}
+          onJumpToAddress={() => moments && jumpTo(moments.address)}
+          onResetAids={() => analysis.status === "ready" && placeAids(analysis.track, addressPose(), cameraAngle)}
           drawing={drawing}
         />
         <DrawingToolbar drawing={drawing} />

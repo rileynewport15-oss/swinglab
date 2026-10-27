@@ -35,7 +35,7 @@ export type PoseTrack = {
   frames: PoseFrame[];
   width: number; // video size in pixels
   height: number;
-  step: number; // seconds between analyzed frames
+  step: number; // seconds between analyzed frames (before the swing gets a closer look)
 };
 
 export type Px = { x: number; y: number };
@@ -58,4 +58,30 @@ export function torsoLength(lms: Landmark[], track: Pick<PoseTrack, "width" | "h
   const shoulders = mid(px(lms, LM.leftShoulder, track), px(lms, LM.rightShoulder, track));
   const hips = mid(px(lms, LM.leftHip, track), px(lms, LM.rightHip, track));
   return distance(shoulders, hips);
+}
+
+/** Where the hands are (average of wrists and index knuckles), in video pixels. */
+export function handsPosition(lms: Landmark[], track: Pick<PoseTrack, "width" | "height">): Px {
+  const points = [LM.leftWrist, LM.rightWrist, LM.leftIndex, LM.rightIndex].map((i) => px(lms, i, track));
+  return {
+    x: points.reduce((s, p) => s + p.x, 0) / points.length,
+    y: points.reduce((s, p) => s + p.y, 0) / points.length,
+  };
+}
+
+/** Middle of the head, from the ears and nose, in video pixels. */
+export function headCenter(lms: Landmark[], track: Pick<PoseTrack, "width" | "height">): Px {
+  const ears = mid(px(lms, LM.leftEar, track), px(lms, LM.rightEar, track));
+  const nose = px(lms, LM.nose, track);
+  // The middle of the skull sits a little toward the face from the ears.
+  return { x: ears.x + (nose.x - ears.x) * 0.25, y: ears.y + (nose.y - ears.y) * 0.25 };
+}
+
+/** The pose frame closest to a time (only frames where a golfer was found). */
+export function nearestFrame(track: PoseTrack, time: number): PoseFrame | null {
+  let best: PoseFrame | null = null;
+  for (const f of track.frames) {
+    if (f.landmarks && (!best || Math.abs(f.time - time) < Math.abs(best.time - time))) best = f;
+  }
+  return best;
 }

@@ -98,9 +98,10 @@ export function checkQuality(track: PoseTrack, address: AddressFrame | null): Qu
   const visibility = key.reduce((sum, i) => sum + lms[i].visibility, 0) / key.length;
   if (visibility < 0.5) return "unclear";
 
-  // Nose to feet should cover at least a quarter of the frame height.
+  // Nose to feet (bent over at address) should cover at least 15% of the
+  // frame height; smaller than that and inches become unreliable.
   const feetY = Math.max(lms[LM.leftAnkle].y, lms[LM.rightAnkle].y);
-  if (feetY - lms[LM.nose].y < 0.25) return "too-small";
+  if (feetY - lms[LM.nose].y < 0.15) return "too-small";
 
   return null;
 }

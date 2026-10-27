@@ -52,3 +52,6 @@ next-env.d.ts
 *.MOV
 *.webm
 *.m4v
+
+# temporary test copies of videos
+/public/_test/

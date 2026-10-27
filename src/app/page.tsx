@@ -40,6 +40,7 @@ export default function Home() {
         {videoUrl ? (
           <VideoAnalyzer
             videoUrl={videoUrl}
+            mode={mode}
             onChangeVideo={() => setVideoUrl(null)}
           />
         ) : (

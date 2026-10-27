@@ -1,5 +1,16 @@
 import { newId, type Point, type Shape } from "../shapes";
-import { LM, distance, mid, px, torsoLength, type Landmark, type PoseTrack, type Px } from "./landmarks";
+import {
+  LM,
+  distance,
+  handsPosition,
+  headCenter as findHeadCenter,
+  mid,
+  px,
+  torsoLength,
+  type Landmark,
+  type PoseTrack,
+  type Px,
+} from "./landmarks";
 
 export type CameraAngle = "face-on" | "down-the-line";
 
@@ -35,21 +46,18 @@ export function buildAutoAids(lms: Landmark[], angle: CameraAngle, track: PoseTr
   // Head circle: centered on the head using the nose and ears, sized from the
   // ear spacing with padding. From down the line the ears overlap, so never go
   // smaller than a head-sized fraction of the torso.
-  const nose = P(LM.nose);
   const leftEar = P(LM.leftEar);
   const rightEar = P(LM.rightEar);
-  const ears = mid(leftEar, rightEar);
   const radius = Math.max(distance(leftEar, rightEar) * 0.8, torso * 0.28);
-  // The middle of the skull sits a little toward the face from the ears, and a little above them.
-  const headCenter = {
-    x: ears.x + (nose.x - ears.x) * 0.25,
-    y: ears.y + (nose.y - ears.y) * 0.25 - radius * 0.15,
-  };
+  // Nudge the circle up a little: ears sit low on the skull.
+  const center = findHeadCenter(lms, track);
+  const headCenter = { x: center.x, y: center.y - radius * 0.15 };
   const aids: Shape[] = [
     shape({
       kind: "circle",
       color: COLORS.head,
       label: "Head",
+      aid: "head",
       points: [toVideo(headCenter), toVideo({ x: headCenter.x + radius, y: headCenter.y })],
     }),
     // Spine angle: hip midpoint to shoulder midpoint, with the tilt shown.
@@ -57,6 +65,7 @@ export function buildAutoAids(lms: Landmark[], angle: CameraAngle, track: PoseTr
       kind: "line",
       color: COLORS.spine,
       label: "Spine",
+      aid: "spine",
       showTilt: true,
       points: [toVideo(hips), toVideo(shoulders)],
     }),
@@ -76,6 +85,7 @@ export function buildAutoAids(lms: Landmark[], angle: CameraAngle, track: PoseTr
         kind: "line",
         color: COLORS.stance,
         label: "Stance",
+        aid: "stance",
         points: [toVideo(extend(b, a, 0.35)), toVideo(extend(a, b, 0.35))],
       }),
     );
@@ -97,6 +107,7 @@ export function buildAutoAids(lms: Landmark[], angle: CameraAngle, track: PoseTr
           kind: "line",
           color: COLORS.hips,
           label,
+          aid: "hips",
           points: [toVideo({ x, y: top }), toVideo({ x, y: bottom })],
         }),
       );
@@ -104,7 +115,7 @@ export function buildAutoAids(lms: Landmark[], angle: CameraAngle, track: PoseTr
   } else {
     // Swing plane: from an estimated ball position up through the hands,
     // extended past the shoulders.
-    const hands = average([P(LM.leftWrist), P(LM.rightWrist), P(LM.leftIndex), P(LM.rightIndex)]);
+    const hands = handsPosition(lms, track);
     const toes = mid(P(LM.leftToe), P(LM.rightToe));
     const heels = mid(P(LM.leftHeel), P(LM.rightHeel));
     const feet = mid(toes, heels);
@@ -131,6 +142,7 @@ export function buildAutoAids(lms: Landmark[], angle: CameraAngle, track: PoseTr
         kind: "line",
         color: COLORS.plane,
         label: "Plane",
+        aid: "plane",
         points: [toVideo(ball), toVideo(end)],
       }),
     );
@@ -142,11 +154,4 @@ export function buildAutoAids(lms: Landmark[], angle: CameraAngle, track: PoseTr
 /** Point `amount` (fraction of the a→b length) beyond b, continuing from a. */
 function extend(a: Px, b: Px, amount: number): Px {
   return { x: b.x + (b.x - a.x) * amount, y: b.y + (b.y - a.y) * amount };
-}
-
-function average(points: Px[]): Px {
-  return {
-    x: points.reduce((s, p) => s + p.x, 0) / points.length,
-    y: points.reduce((s, p) => s + p.y, 0) / points.length,
-  };
 }

@@ -25,17 +25,24 @@ const BONES: [number, number][] = [
 const JOINTS = [...new Set(BONES.flat()), LM.nose];
 
 /**
- * The pose at any moment in the video. We only analyzed some frames, so
- * blend between the two nearest ones for smooth slow motion.
+ * The pose at any moment in the video. We only analyzed some frames (and they
+ * aren't evenly spaced: the swing gets a closer look), so blend between the
+ * two nearest ones for smooth slow motion.
  */
 export function poseAt(track: PoseTrack, time: number): Landmark[] | null {
-  const { frames, step } = track;
+  const { frames } = track;
   if (frames.length === 0) return null;
-  // Frames are evenly spaced, so we can jump straight to the right one.
-  const i = Math.min(frames.length - 1, Math.max(0, Math.floor((time - frames[0].time) / step)));
-  const a = frames[i];
-  const b = frames[i + 1];
-  if (!a.landmarks) return b && Math.abs(b.time - time) < step / 2 ? b.landmarks : null;
+  // Binary search for the last frame at or before `time`.
+  let lo = 0;
+  let hi = frames.length - 1;
+  while (lo < hi) {
+    const m = Math.ceil((lo + hi) / 2);
+    if (frames[m].time <= time) lo = m;
+    else hi = m - 1;
+  }
+  const a = frames[lo];
+  const b = frames[lo + 1];
+  if (!a.landmarks) return b?.landmarks && b.time - time < track.step / 2 ? b.landmarks : null;
   if (!b?.landmarks || time <= a.time) return a.landmarks;
   const t = Math.min(1, (time - a.time) / (b.time - a.time));
   return a.landmarks.map((p, k) => {
