@@ -15,8 +15,12 @@ type Props = {
 export default function PoseOverlay({ videoRef, track, shownAt }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const shownAtRef = useRef(shownAt);
+  const redrawRef = useRef<() => void>(() => {});
+  // After every render (e.g. the skeleton was switched off), check right away
+  // instead of waiting for the next animation frame.
   useEffect(() => {
     shownAtRef.current = shownAt;
+    redrawRef.current();
   });
 
   useEffect(() => {
@@ -30,9 +34,8 @@ export default function PoseOverlay({ videoRef, track, shownAt }: Props) {
     let lastHeight = 0;
     let lastShown: boolean | null = null;
 
-    // Check every animation frame, but only redraw when the time, size or timing changed.
-    const tick = () => {
-      frameId = requestAnimationFrame(tick);
+    // Redraw only when the time, size or timing changed.
+    const redraw = () => {
       const video = videoRef.current;
       if (!video) return;
       const { clientWidth: width, clientHeight: height } = canvas;
@@ -50,6 +53,12 @@ export default function PoseOverlay({ videoRef, track, shownAt }: Props) {
       ctx.clearRect(0, 0, width, height);
       const pose = shown ? poseAt(track, video.currentTime) : null;
       if (pose) drawSkeleton(ctx, pose, { width, height });
+    };
+    redrawRef.current = redraw;
+    // Check every animation frame so the skeleton follows the video.
+    const tick = () => {
+      frameId = requestAnimationFrame(tick);
+      redraw();
     };
     tick();
     return () => cancelAnimationFrame(frameId);

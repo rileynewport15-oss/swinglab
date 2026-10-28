@@ -10,7 +10,7 @@ import AnalysisPanel from "./AnalysisPanel";
 import ResultsPanel from "./ResultsPanel";
 import AidsPanel from "./AidsPanel";
 import { useAidSettings } from "@/hooks/useAidSettings";
-import { aidShownAt, type AidKey } from "@/lib/aidVisibility";
+import { AID_NAMES, aidShownAt, type AidKey, type AidSettings } from "@/lib/aidVisibility";
 import type { Marker } from "./MomentMarkers";
 import { useDrawing } from "@/hooks/useDrawing";
 import { usePoseAnalysis } from "@/hooks/usePoseAnalysis";
@@ -138,12 +138,36 @@ export default function VideoAnalyzer({ videoUrl, mode, onChangeVideo }: Props) 
     return m[id as MomentId];
   }
 
-  // Is an aid on screen at this moment? (Aids panel choices; a result the user
-  // clicked always shows its aid so the highlight is visible.)
+  // Is an aid on screen at this moment? Follows the Training aids card, with
+  // one exception: right after you click a result, its aid is highlighted
+  // even if switched off (a temporary highlight, see clearHighlight).
   function isAidShown(aid: AidKey, time: number) {
     if (aid === highlightAid) return true;
     return aidShownAt(aid, time, aidSettings, swingFound ? moments : null);
   }
+
+  // The highlighted aid is switched off in the card, so it's only on screen
+  // because of the result that was clicked.
+  const temporarilyShown = highlightAid !== null && !aidSettings.visible[highlightAid] ? highlightAid : null;
+
+  // The temporary highlight ends when you change any aid setting or press play
+  // (and when you open a different result or close this one, in selectFinding).
+  function clearHighlight() {
+    setHighlightAid(null);
+  }
+
+  function changeAidSettings(update: (prev: AidSettings) => AidSettings) {
+    setAidSettings(update);
+    clearHighlight();
+  }
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    const onPlay = () => setHighlightAid(null);
+    video.addEventListener("play", onPlay);
+    return () => video.removeEventListener("play", onPlay);
+  }, [videoUrl]);
 
   // Open a result (jump to it and highlight its aid), or close it (null).
   function selectFinding(f: Finding | null) {
@@ -206,6 +230,14 @@ export default function VideoAnalyzer({ videoUrl, mode, onChangeVideo }: Props) 
               aidShownAt={isAidShown}
               showLabels={aidSettings.labels}
             />
+            {temporarilyShown && (
+              <p
+                role="status"
+                className="pointer-events-none absolute inset-x-2 top-2 mx-auto w-fit rounded-full bg-fairway-900/85 px-3 py-1.5 text-center text-xs font-semibold text-white shadow"
+              >
+                Showing {AID_NAMES[temporarilyShown]} for this result
+              </p>
+            )}
             {analysis.status === "analyzing" && (
               <AnalyzingOverlay
                 progress={analysis.progress}
@@ -241,7 +273,7 @@ export default function VideoAnalyzer({ videoUrl, mode, onChangeVideo }: Props) 
       <div className="contents lg:col-start-1 lg:row-start-1 lg:flex lg:flex-col lg:gap-4">
         <AidsPanel
           settings={aidSettings}
-          onChange={setAidSettings}
+          onChange={changeAidSettings}
           cameraAngle={cameraAngle}
           skeletonAvailable={analysis.status === "ready"}
           timingAvailable={swingFound}

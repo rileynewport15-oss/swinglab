@@ -59,24 +59,29 @@ export default function DrawingCanvas({ drawing, highlightAid = null, videoRef, 
   const dragRef = useRef<Drag | null>(null);
   const [size, setSize] = useState<Size>({ width: 0, height: 0 });
 
-  // Which aids are on screen right now. Aids can be timed to part of the
-  // swing, so check every animation frame and re-render only when it changes.
-  const [shownAids, setShownAids] = useState<string>(ALL_AIDS.join());
-  const aidShownRef = useRef(aidShownAt);
+  // The video time, kept in state so timed aids appear and disappear as the
+  // video plays or is scrubbed. Updated on every animation frame (only when it
+  // changes) and right away after a seek.
+  const [time, setTime] = useState(0);
   useEffect(() => {
-    aidShownRef.current = aidShownAt;
-  });
-  useEffect(() => {
+    const video = videoRef.current;
     let frameId = 0;
+    const update = () => setTime((prev) => (video && video.currentTime !== prev ? video.currentTime : prev));
     const tick = () => {
       frameId = requestAnimationFrame(tick);
-      const time = videoRef.current?.currentTime ?? 0;
-      const key = ALL_AIDS.filter((a) => aidShownRef.current(a, time)).join();
-      setShownAids((prev) => (prev === key ? prev : key));
+      update();
     };
     tick();
-    return () => cancelAnimationFrame(frameId);
+    video?.addEventListener("seeked", update);
+    return () => {
+      cancelAnimationFrame(frameId);
+      video?.removeEventListener("seeked", update);
+    };
   }, [videoRef]);
+
+  // Which aids are on screen right now, worked out on every render so that
+  // switching an aid off (or closing a result) hides it immediately.
+  const shownAids = ALL_AIDS.filter((a) => aidShownAt(a, time)).join();
 
   // Shapes on screen now: everything the user drew, plus the aids that are switched on.
   const visibleShapes = useMemo(() => {
@@ -91,15 +96,20 @@ export default function DrawingCanvas({ drawing, highlightAid = null, videoRef, 
   );
 
   // Track the canvas's on-screen size (changes on window resize or rotation).
+  // Measure once right away too: the browser can delay its first resize report
+  // (e.g. while the tab is in the background), and nothing draws until we know the size.
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const observer = new ResizeObserver(([entry]) => {
-      const { width, height } = entry.contentRect;
-      setSize({ width, height });
-    });
+    const measure = (width: number, height: number) =>
+      setSize((prev) => (prev.width === width && prev.height === height ? prev : { width, height }));
+    const observer = new ResizeObserver(([entry]) => measure(entry.contentRect.width, entry.contentRect.height));
     observer.observe(canvas);
-    return () => observer.disconnect();
+    const first = setTimeout(() => measure(canvas.clientWidth, canvas.clientHeight), 0);
+    return () => {
+      observer.disconnect();
+      clearTimeout(first);
+    };
   }, []);
 
   // Redraw everything. We scale by devicePixelRatio so lines are sharp on
