@@ -113,30 +113,7 @@ export function buildAutoAids(lms: Landmark[], angle: CameraAngle, track: PoseTr
       );
     }
   } else {
-    // Swing plane: from an estimated ball position up through the hands,
-    // extended past the shoulders.
-    const hands = handsPosition(lms, track);
-    const toes = mid(P(LM.leftToe), P(LM.rightToe));
-    const heels = mid(P(LM.leftHeel), P(LM.rightHeel));
-    const feet = mid(toes, heels);
-    // Leg length (hip → knee → ankle) is our ruler here: unlike overall height,
-    // it doesn't shrink when the golfer bends over at address.
-    const leg = (side: "left" | "right") => {
-      const hip = P(side === "left" ? LM.leftHip : LM.rightHip);
-      const knee = P(side === "left" ? LM.leftKnee : LM.rightKnee);
-      const ankle = P(side === "left" ? LM.leftAnkle : LM.rightAnkle);
-      return distance(hip, knee) + distance(knee, ankle);
-    };
-    const legLength = (leg("left") + leg("right")) / 2;
-    // The golfer faces the side the hands hang toward; the ball sits out from
-    // the toes on that side (about 0.75 leg lengths), at ground level.
-    const facing = Math.sign(hands.x - hips.x) || 1;
-    const ball = { x: toes.x + facing * legLength * 0.75, y: Math.max(toes.y, feet.y) };
-    // Extend the ball→hands line until it rises a bit above shoulder height.
-    const targetY = shoulders.y - torso * 0.3;
-    const rise = ball.y - hands.y;
-    const t = rise > 1 ? (ball.y - targetY) / rise : 2;
-    const end = { x: ball.x + (hands.x - ball.x) * t, y: ball.y + (hands.y - ball.y) * t };
+    const { ball, end } = planeLine(lms, track);
     aids.push(
       shape({
         kind: "line",
@@ -154,4 +131,38 @@ export function buildAutoAids(lms: Landmark[], angle: CameraAngle, track: PoseTr
 /** Point `amount` (fraction of the a→b length) beyond b, continuing from a. */
 function extend(a: Px, b: Px, amount: number): Px {
   return { x: b.x + (b.x - a.x) * amount, y: b.y + (b.y - a.y) * amount };
+}
+
+/**
+ * The swing plane line for a down-the-line view: from an estimated ball
+ * position up through the hands at address, extended past the shoulders.
+ * Used both to draw the aid and to measure the hand path against it.
+ */
+export function planeLine(lms: Landmark[], track: PoseTrack): { ball: Px; end: Px } {
+  const P = (i: number) => px(lms, i, track);
+  const shoulders = mid(P(LM.leftShoulder), P(LM.rightShoulder));
+  const hips = mid(P(LM.leftHip), P(LM.rightHip));
+  const torso = torsoLength(lms, track);
+  const hands = handsPosition(lms, track);
+  const toes = mid(P(LM.leftToe), P(LM.rightToe));
+  const heels = mid(P(LM.leftHeel), P(LM.rightHeel));
+  const feet = mid(toes, heels);
+  // Leg length (hip → knee → ankle) is our ruler here: unlike overall height,
+  // it doesn't shrink when the golfer bends over at address.
+  const leg = (side: "left" | "right") => {
+    const hip = P(side === "left" ? LM.leftHip : LM.rightHip);
+    const knee = P(side === "left" ? LM.leftKnee : LM.rightKnee);
+    const ankle = P(side === "left" ? LM.leftAnkle : LM.rightAnkle);
+    return distance(hip, knee) + distance(knee, ankle);
+  };
+  const legLength = (leg("left") + leg("right")) / 2;
+  // The golfer faces the side the hands hang toward; the ball sits out from
+  // the toes on that side (about 0.75 leg lengths), at ground level.
+  const facing = Math.sign(hands.x - hips.x) || 1;
+  const ball = { x: toes.x + facing * legLength * 0.75, y: Math.max(toes.y, feet.y) };
+  // Extend the ball→hands line until it rises a bit above shoulder height.
+  const targetY = shoulders.y - torso * 0.3;
+  const rise = ball.y - hands.y;
+  const t = rise > 1 ? (ball.y - targetY) / rise : 2;
+  return { ball, end: { x: ball.x + (hands.x - ball.x) * t, y: ball.y + (hands.y - ball.y) * t } };
 }

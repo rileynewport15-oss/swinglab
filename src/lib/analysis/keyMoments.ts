@@ -16,6 +16,8 @@ const MIN_STROKE = 0.12;
 // After the top, the hands must come back below this share of their furthest
 // point before we accept that the downswing has started.
 const RETURN_SHARE = 0.6;
+// Frames within this share of the furthest point count as "paused at the top".
+const TOP_PLATEAU = 0.97;
 // Takeaway: walking back from the top, the hands are "at rest" once their
 // speed (averaged over SPEED_SPAN seconds) drops below this, in torso lengths/s.
 const TAKEAWAY_SPEED = 0.5;
@@ -26,7 +28,7 @@ const TAKEAWAY_SEARCH = 1.5;
 // first), and pose detection can't see the club. So the takeaway is set this
 // many seconds before the hands move. Checked frame by frame on real full
 // swings; putts have almost no wrist hinge.
-export const CLUB_LEAD: Record<ShotMode, number> = { "full-swing": 0.12, chip: 0.06, putt: 0 };
+export const CLUB_LEAD: Record<ShotMode, number> = { "full-swing": 0.12, putt: 0 };
 // Address is shown this many seconds before the hands move, when the club is
 // still resting behind the ball.
 export const ADDRESS_LEAD = 0.25;
@@ -34,7 +36,7 @@ export const ADDRESS_LEAD = 0.25;
 /**
  * Find the top of the backswing and impact after the address time.
  *
- * Works for swings, chips and putts alike by tracking how far the hands are
+ * Works for full swings and putts alike by tracking how far the hands are
  * from where they were at address:
  *  - top    = the first time that distance peaks before shrinking again
  *  - impact = after the top, the moment the hands come back closest to address
@@ -56,6 +58,13 @@ export function detectKeyMoments(track: PoseTrack, addressTime: number): KeyMome
     }
   }
   if (top < 0 || peak < MIN_STROKE) return null;
+  // The hands pause at the top, so the furthest point jumps around within that
+  // pause from frame to frame. Use the middle of the pause for a steady marker.
+  let first = top;
+  let last = top;
+  while (first > 0 && distances[first - 1] >= peak * TOP_PLATEAU) first--;
+  while (last < distances.length - 1 && distances[last + 1] >= peak * TOP_PLATEAU) last++;
+  const topTime = (after[first].time + after[last].time) / 2;
 
   // Impact: the closest return to address before the follow-through carries the hands away again.
   let impact = -1;
@@ -65,7 +74,7 @@ export function detectKeyMoments(track: PoseTrack, addressTime: number): KeyMome
   }
   if (impact < 0) return null;
 
-  return { address: addressTime, top: after[top].time, impact: after[impact].time };
+  return { address: addressTime, top: topTime, impact: after[impact].time };
 }
 
 /**

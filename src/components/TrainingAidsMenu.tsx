@@ -13,7 +13,7 @@ export default function TrainingAidsMenu({ drawing }: Props) {
   return (
     <div className="flex flex-col gap-3 rounded-3xl bg-white p-4 shadow-sm">
       <div>
-        <h2 className="font-bold text-fairway-900">Training aids</h2>
+        <h2 className="font-bold text-fairway-900">Place aids by hand</h2>
         <p className="text-xs text-fairway-700">
           Choose one, then click the video to place it. Drag the dots, the line, or the label to adjust.
         </p>

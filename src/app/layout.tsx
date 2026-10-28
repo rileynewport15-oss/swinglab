@@ -9,7 +9,7 @@ const geistSans = Geist({
 
 export const metadata: Metadata = {
   title: "SwingLab – Golf Swing Analyzer",
-  description: "Upload a swing, chip, or putt and review it with slow motion and drawing tools.",
+  description: "Upload a full swing or putt and review it with slow motion and drawing tools.",
 };
 
 // Mobile setup: fit the phone width, and color the browser bar green.

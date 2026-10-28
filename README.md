@@ -1,6 +1,6 @@
 # SwingLab – Golf Swing Analyzer
 
-A mobile-first site for reviewing golf swing, chip, and putt videos.
+A site for reviewing full swing and putting videos.
 
 ## Phase 1 (done)
 
@@ -12,16 +12,24 @@ A mobile-first site for reviewing golf swing, chip, and putt videos.
   spine angle line, and either a stance line + hip lines (Face On) or a swing plane line
   (Down the Line). Aids stay fixed at address while the video plays.
 - Live pose skeleton toggle to compare the moving body against the fixed aids
-- **Swing analysis (Phase 2):** detects Address, Top and Impact (draggable markers on the
-  scrubber), then reports Strengths / Areas to improve: tempo, head movement, hip sway
-  (Face On) or spine angle change (Down the Line); Chip and Putt use tempo, head movement
-  and lower-body stillness. Click a result to jump to that frame with its aid highlighted.
-  All good/needs-work thresholds are in `src/config/analysisConfig.ts`.
+- **Swing analysis:** detects Address, Top and Impact (ticks on the scrubber, plus chips
+  below it with ‹ › one-frame nudges). Results are sorted biggest issue first, with a
+  Minor/Major severity, a plain-language explanation and the usual ball flight.
+  - Full Swing, Down the Line: tempo, posture at address, takeaway, over the top / stuck,
+    lead arm at the top (only when clearly visible), early extension, hip depth, head dip/lift
+  - Full Swing, Face On: tempo, hip sway, shoulder turn, reverse spine tilt, weight shift,
+    lateral head movement
+  - Putt: tempo (about 2:1), head and lower-body stillness, plus (Face On) wrist breakdown
+    and follow-through vs backstroke
+  - Checks are skipped when the pose confidence is low. All thresholds are in
+    `src/config/analysisConfig.ts`.
+- **Training aids card:** choose which aids show and when (whole swing, address only,
+  address to top, top to impact), plus a Labels toggle. Choices are remembered.
 - If the golfer can't be found clearly: filming tips, plus manual placement as a fallback
 - Manual training aids (fallback) placed by clicking the video: swing plane (ball, then hands), alignment
   (two ends), head circle (center of head), spine angle (hips, then neck; shows tilt)
 - Every drawing can be adjusted: drag its dots (48px grab areas), the line itself, or its label
-- Mode selector: Full Swing / Chip / Putt
+- Mode selector: Full Swing / Putt
 - Wide layout on computers (video left, tools right); stacked layout on phones
 
 ### Keyboard shortcuts (computer)

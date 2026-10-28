@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, type RefObject } from "react";
-import MomentMarkers, { type Marker } from "./MomentMarkers";
+import { MomentChips, MomentTicks, type Marker } from "./MomentMarkers";
 
 const SPEEDS = [1, 0.5, 0.25, 0.125];
 
@@ -12,7 +12,8 @@ const FRAME_STEP = 1 / 30;
 type Props = {
   videoRef: RefObject<HTMLVideoElement | null>;
   markers?: Marker[];
-  onMarkerMove?: (id: string, time: number, done: boolean) => void;
+  // Returns where the marker actually ended up (markers keep their order).
+  onMarkerMove?: (id: string, time: number, done: boolean) => number | undefined;
 };
 
 // Play/pause, scrubber, speed and frame-step controls for the <video> above it.
@@ -73,7 +74,8 @@ export default function PlayerControls({ videoRef, markers, onMarkerMove }: Prop
   function togglePlay() {
     const video = videoRef.current;
     if (!video) return;
-    if (video.paused || video.ended) video.play();
+    // play() can be refused (e.g. the browser pauses background video); that's fine.
+    if (video.paused || video.ended) video.play().catch(() => {});
     else video.pause();
   }
 
@@ -98,24 +100,9 @@ export default function PlayerControls({ videoRef, markers, onMarkerMove }: Prop
 
   return (
     <div className="flex flex-col gap-3 rounded-3xl bg-white p-4 shadow-sm">
-      {/* Scrubber */}
-      <div className="flex items-end gap-3">
-        <div className="flex-1">
-          {markers && markers.length > 0 && (
-            <MomentMarkers
-              duration={duration}
-              markers={markers}
-              onSeek={(t) => {
-                videoRef.current?.pause();
-                seek(t);
-              }}
-              onMove={(id, t, done) => {
-                videoRef.current?.pause();
-                seek(t);
-                onMarkerMove?.(id, t, done);
-              }}
-            />
-          )}
+      {/* Scrubber, with the key moment ticks on it */}
+      <div className="flex items-center gap-3">
+        <div className="relative flex-1">
           <input
             type="range"
             className="scrubber w-full"
@@ -126,11 +113,36 @@ export default function PlayerControls({ videoRef, markers, onMarkerMove }: Prop
             value={time}
             onChange={(e) => seek(Number(e.target.value))}
           />
+          {markers && markers.length > 0 && (
+            <MomentTicks
+              duration={duration}
+              markers={markers}
+              onMove={(id, t, done) => {
+                videoRef.current?.pause();
+                seek(onMarkerMove?.(id, t, done) ?? t);
+              }}
+            />
+          )}
         </div>
         <span className="w-24 text-right text-sm tabular-nums text-fairway-700">
           {time.toFixed(2)} / {duration.toFixed(2)}s
         </span>
       </div>
+      {markers && markers.length > 0 && (
+        <MomentChips
+          markers={markers}
+          onSeek={(t) => {
+            videoRef.current?.pause();
+            seek(t);
+          }}
+          onNudge={(id, seconds) => {
+            const m = markers.find((x) => x.id === id);
+            if (!m) return;
+            videoRef.current?.pause();
+            seek(onMarkerMove?.(id, m.time + seconds, true) ?? m.time + seconds);
+          }}
+        />
+      )}
 
       {/* Frame back, play/pause, frame forward */}
       <div className="flex items-center justify-center gap-3">

@@ -6,7 +6,6 @@ export type Mode = ShotMode;
 
 export const MODES: { id: Mode; label: string; icon: string }[] = [
   { id: "full-swing", label: "Full Swing", icon: "🏌️" },
-  { id: "chip", label: "Chip", icon: "⛳" },
   { id: "putt", label: "Putt", icon: "🕳️" },
 ];
 
@@ -22,7 +21,7 @@ export default function ModeSelector({ mode, onChange }: Props) {
     <div
       role="tablist"
       aria-label="Shot type"
-      className="grid grid-cols-3 gap-1 rounded-2xl bg-fairway-900/40 p-1"
+      className="grid grid-cols-2 gap-1 rounded-2xl bg-fairway-900/40 p-1"
     >
       {MODES.map((m) => {
         const active = m.id === mode;

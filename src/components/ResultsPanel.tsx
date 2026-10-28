@@ -21,17 +21,17 @@ export default function ResultsPanel({ findings, swingFound, activeId, onSelect 
         <h2 className="font-bold text-fairway-900">Your results</h2>
         <p className="text-xs text-fairway-700">
           {swingFound
-            ? "Click a result to see it on the video."
-            : "We couldn't spot a full swing in this clip, so there are no results yet. Make sure the whole swing is in the video, or drag the markers above the scrubber."}
+            ? "Biggest issues first. Click a result to see it on the video."
+            : "We couldn't spot a full swing in this clip, so there are no results yet. Make sure the whole swing is in the video, or drag the A / T / I markers on the scrubber."}
         </p>
       </div>
 
       {swingFound && (
         <>
-          <Section title="Strengths" icon="✓" tone="good" items={strengths} activeId={activeId} onSelect={onSelect}
-            empty="Keep working. Your strengths will show up here." />
           <Section title="Areas to improve" icon="→" tone="improve" items={improve} activeId={activeId} onSelect={onSelect}
             empty="Nothing to fix here. Nice swing!" />
+          <Section title="Strengths" icon="✓" tone="good" items={strengths} activeId={activeId} onSelect={onSelect}
+            empty="Keep working. Your strengths will show up here." />
         </>
       )}
     </div>
@@ -83,8 +83,20 @@ function Section({
                   {icon}
                 </span>
                 <span>
-                  <span className="block text-sm font-semibold text-fairway-900">{f.title}</span>
-                  <span className="mt-0.5 block text-xs text-fairway-700">{f.detail}</span>
+                  <span className="block text-sm font-semibold text-fairway-900">
+                    {f.severity && (
+                      <span
+                        className={`mr-1.5 inline-block rounded-full px-2 py-0.5 align-middle text-[10px] font-bold uppercase tracking-wide text-white ${
+                          f.severity === "major" ? "bg-red-600" : "bg-amber-500"
+                        }`}
+                      >
+                        {f.severity}
+                      </span>
+                    )}
+                    {f.title}
+                  </span>
+                  <span className="mt-1 block text-xs text-fairway-800">{f.meaning}</span>
+                  <span className="mt-1 block text-xs text-fairway-600">{f.detail}</span>
                   <span className="mt-1 block text-xs font-semibold text-fairway-600">
                     ▶ See it at {f.time.toFixed(2)}s
                   </span>

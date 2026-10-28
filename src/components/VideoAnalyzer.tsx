@@ -60,7 +60,6 @@ export default function VideoAnalyzer({ videoUrl, mode, onChangeVideo }: Props) 
   const [cameraAngle, setCameraAngle] = useState<CameraAngle>(() => loadAngle() ?? "face-on");
   const [angleAsked, setAngleAsked] = useState(() => loadAngle() !== null);
   const [aidSettings, setAidSettings] = useAidSettings();
-  const [aidsOpen, setAidsOpen] = useState(false);
   const [moments, setMoments] = useState<KeyMoments | null>(null);
   const [activeFinding, setActiveFinding] = useState<string | null>(null);
   const [highlightAid, setHighlightAid] = useState<AidKind | null>(null);
@@ -72,13 +71,17 @@ export default function VideoAnalyzer({ videoUrl, mode, onChangeVideo }: Props) 
     video.currentTime = time;
   }
 
-  function placeAids(track: PoseTrack, addressPose: Landmark[], angle: CameraAngle) {
+  // The address time the aids were last placed at.
+  const aidsAddressRef = useRef<number | null>(null);
+
+  function placeAids(track: PoseTrack, addressPose: Landmark[], angle: CameraAngle, addressTime: number) {
     drawing.placeAutoAids(buildAutoAids(addressPose, angle, track));
+    aidsAddressRef.current = addressTime;
   }
 
   // When analysis finishes: place the aids, mark the key moments, show the address frame.
   const analysis = usePoseAnalysis(videoUrl, (track, address, found) => {
-    placeAids(track, address.landmarks, cameraAngle);
+    placeAids(track, address.landmarks, cameraAngle, address.time);
     setMoments(found ?? { address: address.time, top: NaN, impact: NaN });
     jumpTo(address.time);
     saveAngle(cameraAngle); // counts as answered, even if the default was kept
@@ -89,14 +92,16 @@ export default function VideoAnalyzer({ videoUrl, mode, onChangeVideo }: Props) 
     setCameraAngle(angle);
     saveAngle(angle);
     setAngleAsked(true);
-    if (analysis.status === "ready") placeAids(analysis.track, addressPose(), angle);
+    if (analysis.status === "ready") placeAids(analysis.track, addressPose(), angle, addressTime());
   }
 
-  // The pose at the (possibly user-adjusted) address marker.
+  // The (possibly user-adjusted) address marker time, and the pose there.
+  function addressTime(): number {
+    return moments?.address ?? (analysis.status === "ready" ? analysis.address.time : 0);
+  }
   function addressPose(): Landmark[] {
     if (analysis.status !== "ready") return [];
-    const time = moments?.address ?? analysis.address.time;
-    return nearestFrame(analysis.track, time)?.landmarks ?? analysis.address.landmarks;
+    return nearestFrame(analysis.track, addressTime())?.landmarks ?? analysis.address.landmarks;
   }
 
   const swingFound = moments !== null && Number.isFinite(moments.top) && Number.isFinite(moments.impact);
@@ -116,7 +121,7 @@ export default function VideoAnalyzer({ videoUrl, mode, onChangeVideo }: Props) 
         .map((id) => ({ id, label: MOMENT_LABELS[id], time: moments[id], ...MARKER_STYLE[id] }))
     : [];
 
-  function moveMarker(id: string, time: number, done: boolean) {
+  function moveMarker(id: string, time: number, done: boolean): number | undefined {
     if (!moments) return;
     const m = { ...moments };
     // Keep the order Address → Top → Impact.
@@ -124,11 +129,13 @@ export default function VideoAnalyzer({ videoUrl, mode, onChangeVideo }: Props) 
     if (id === "top") m.top = Math.min(Math.max(time, m.address + MIN_GAP), m.impact - MIN_GAP);
     if (id === "impact") m.impact = Math.max(time, m.top + MIN_GAP);
     setMoments(m);
-    // Aids are anchored to address, so move them when the address marker is dropped.
-    if (id === "address" && done && analysis.status === "ready") {
+    // Aids are anchored to address, so move them when the address marker is
+    // dropped somewhere new (a tap that doesn't move it keeps any fine-tuning).
+    if (id === "address" && done && analysis.status === "ready" && m.address !== aidsAddressRef.current) {
       const pose = nearestFrame(analysis.track, m.address)?.landmarks;
-      if (pose) placeAids(analysis.track, pose, cameraAngle);
+      if (pose) placeAids(analysis.track, pose, cameraAngle, m.address);
     }
+    return m[id as MomentId];
   }
 
   // Is an aid on screen at this moment? (Aids panel choices; a result the user
@@ -191,25 +198,6 @@ export default function VideoAnalyzer({ videoUrl, mode, onChangeVideo }: Props) 
             aidShownAt={isAidShown}
             showLabels={aidSettings.labels}
           />
-          {analysis.status !== "analyzing" && (
-            <button
-              onClick={() => setAidsOpen((o) => !o)}
-              aria-expanded={aidsOpen}
-              className="absolute right-2 top-2 z-10 flex min-h-11 items-center gap-1.5 rounded-full bg-fairway-900/85 px-4 text-sm font-semibold text-white shadow-lg ring-1 ring-white/30 hover:bg-fairway-900"
-            >
-              <span aria-hidden>👁</span> Aids
-            </button>
-          )}
-          {aidsOpen && analysis.status !== "analyzing" && (
-            <AidsPanel
-              settings={aidSettings}
-              onChange={setAidSettings}
-              cameraAngle={cameraAngle}
-              skeletonAvailable={analysis.status === "ready"}
-              timingAvailable={swingFound}
-              onClose={() => setAidsOpen(false)}
-            />
-          )}
           {analysis.status === "analyzing" && (
             <AnalyzingOverlay
               progress={analysis.progress}
@@ -231,13 +219,20 @@ export default function VideoAnalyzer({ videoUrl, mode, onChangeVideo }: Props) 
             onSelect={selectFinding}
           />
         )}
+        <AidsPanel
+          settings={aidSettings}
+          onChange={setAidSettings}
+          cameraAngle={cameraAngle}
+          skeletonAvailable={analysis.status === "ready"}
+          timingAvailable={swingFound}
+        />
         <AnalysisPanel
           analysis={analysis}
           cameraAngle={cameraAngle}
           onChangeAngle={changeAngle}
           addressTime={moments?.address ?? null}
           onJumpToAddress={() => moments && jumpTo(moments.address)}
-          onResetAids={() => analysis.status === "ready" && placeAids(analysis.track, addressPose(), cameraAngle)}
+          onResetAids={() => analysis.status === "ready" && placeAids(analysis.track, addressPose(), cameraAngle, addressTime())}
           drawing={drawing}
         />
         <DrawingToolbar drawing={drawing} />

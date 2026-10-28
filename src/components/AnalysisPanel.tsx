@@ -60,7 +60,7 @@ export default function AnalysisPanel(props: Props) {
         <h2 className="font-bold text-fairway-900">Swing analysis</h2>
         <p className="text-xs text-fairway-700">
           {ready
-            ? "Aids are set at your address position and stay fixed while you swing. Drag them to fine-tune, or use the Aids button on the video to choose which show and when."
+            ? "Aids are set at your address position and stay fixed while you swing. Drag them to fine-tune, or use the Training aids card to choose which show and when."
             : "Finding your address position…"}
         </p>
       </div>

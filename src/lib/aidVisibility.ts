@@ -16,6 +16,16 @@ export const AID_NAMES: Record<AidKey, string> = {
   skeleton: "Pose skeleton",
 };
 
+// Matches the colors the aids are drawn in (see autoAids.ts).
+export const AID_COLORS: Record<AidKey, string> = {
+  head: "#38bdf8",
+  spine: "#f472b6",
+  plane: "#facc15",
+  stance: "#ffffff",
+  hips: "#fb923c",
+  skeleton: "#22c55e",
+};
+
 export const TIMING_NAMES: Record<AidTiming, string> = {
   whole: "Whole swing",
   address: "Address only",
