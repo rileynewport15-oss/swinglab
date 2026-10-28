@@ -2,20 +2,26 @@
 
 import { useState } from "react";
 import type { Finding } from "@/lib/analysis/metrics";
+import type { ShotMode } from "@/config/analysisConfig";
+import { buildPracticePlan } from "@/lib/analysis/practicePlan";
+import HowToFix from "./HowToFix";
+import PracticePlanModal from "./PracticePlanModal";
 
 type Props = {
   findings: Finding[];
   swingFound: boolean;
   activeId: string | null; // the expanded result
   onSelect: (finding: Finding | null) => void; // open a result, or close it (null)
+  mode: ShotMode;
 };
 
 // "Areas to improve" and "Strengths" as collapsible sections. Each result shows
 // just its badge and title; clicking it opens the details, jumps the video to
 // that moment and highlights the matching aid. On computers the card fits the
 // screen and scrolls inside itself.
-export default function ResultsPanel({ findings, swingFound, activeId, onSelect }: Props) {
+export default function ResultsPanel({ findings, swingFound, activeId, onSelect, mode }: Props) {
   const [open, setOpen] = useState({ improve: true, strengths: false });
+  const [showPlan, setShowPlan] = useState(false);
   const improve = findings.filter((f) => f.status === "improve");
   const strengths = findings.filter((f) => f.status === "strength");
 
@@ -28,7 +34,16 @@ export default function ResultsPanel({ findings, swingFound, activeId, onSelect 
             ? "Biggest issues first. Click a result for details and to see it on the video."
             : "We couldn't spot a full swing in this clip, so there are no results yet. Make sure the whole swing is in the video, or drag the A / T / I markers on the scrubber."}
         </p>
+        {swingFound && (
+          <button
+            onClick={() => setShowPlan(true)}
+            className="mt-3 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-fairway-700 text-sm font-semibold text-white hover:bg-fairway-800"
+          >
+            <span aria-hidden>📅</span> Build my practice plan
+          </button>
+        )}
       </div>
+      {showPlan && <PracticePlanModal plan={buildPracticePlan(findings, mode)} onClose={() => setShowPlan(false)} />}
 
       {swingFound && (
         <div className="flex min-h-0 flex-col gap-2 overflow-y-auto px-4 pb-4">
@@ -153,6 +168,7 @@ function Result({
           <p className="text-xs text-fairway-800">{f.meaning}</p>
           <p className="mt-1 text-xs text-fairway-600">{f.detail}</p>
           <p className="mt-1 text-xs font-semibold text-fairway-600">▶ Shown on the video at {f.time.toFixed(2)}s</p>
+          {f.issue && <HowToFix issue={f.issue} />}
         </div>
       )}
     </div>

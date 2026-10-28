@@ -15,6 +15,7 @@ import {
 } from "../pose/landmarks";
 import type { CameraAngle } from "../pose/autoAids";
 import { CLUB_LEAD, takeawayTime, type KeyMoments } from "./keyMoments";
+import type { IssueKey } from "@/data/improvements";
 
 export type Severity = "minor" | "major";
 
@@ -28,6 +29,7 @@ export type Finding = {
   time: number; // where in the video this shows up
   aid?: AidKind; // which training aid to highlight
   score: number; // how far past the threshold (for sorting the biggest issue first)
+  issue?: IssueKey; // which drills and training aids fix it (see src/data/improvements.ts)
 };
 
 type Input = {
@@ -141,6 +143,11 @@ function strength(id: string, title: string, detail: string, meaning: string, ti
   return { id, status: "strength", title, detail, meaning, time, aid, score: 0 };
 }
 
+/** Tag an area to improve with the issue it is, so we can suggest drills. */
+function withIssue(issue: IssueKey, finding: Finding): Finding {
+  return { ...finding, issue };
+}
+
 function issue(
   id: string,
   severity: Severity,
@@ -187,7 +194,7 @@ function tempo(c: Context): Finding | null {
   const severity: Severity = ratio < t.okMin || ratio > t.okMax ? "major" : "minor";
   const score = ratio < t.goodMin ? t.goodMin / ratio : ratio / t.goodMax;
   if (ratio < t.goodMin) {
-    return issue(
+    return withIssue(putt ? "putt-tempo" : "tempo-rushed", issue(
       "tempo",
       severity,
       score,
@@ -197,9 +204,9 @@ function tempo(c: Context): Finding | null {
         ? "A quick, jabby backstroke makes it hard to control speed, so putts often finish well short or long."
         : "A rushed backswing lets your arms outrace your body. That often leads to an over-the-top move (pulls and slices) and inconsistent contact. Take it back a little slower.",
       moments.top,
-    );
+    ));
   }
-  return issue(
+  return withIssue(putt ? "putt-tempo" : "tempo-slow", issue(
     "tempo",
     severity,
     score,
@@ -209,7 +216,7 @@ function tempo(c: Context): Finding | null {
       ? "A slow forward stroke usually means you're decelerating, which leaves putts short and pulled or pushed."
       : "A slow, guided downswing costs clubhead speed and often leaves the face open: pushes, slices and lost distance. Let the club speed up through the ball.",
     moments.top,
-  );
+  ));
 }
 
 // ---------- Full swing, down the line ----------
@@ -262,7 +269,7 @@ function posture(c: Context): Finding | null {
     );
   }
   const worst = problems.sort((a, b) => b.off - a.off)[0];
-  return issue("posture", worst.off > 8 ? "major" : "minor", 1 + worst.off / 8, worst.title, detail, worst.meaning, moments.address, "spine");
+  return withIssue("posture", issue("posture", worst.off > 8 ? "major" : "minor", 1 + worst.off / 8, worst.title, detail, worst.meaning, moments.address, "spine"));
 }
 
 function takeaway(c: Context): Finding | null {
@@ -280,7 +287,7 @@ function takeaway(c: Context): Finding | null {
   const inside = grade(-out, DTL.takeawayInsideInches);
   const outside = grade(out, DTL.takeawayOutsideInches);
   if (inside) {
-    return issue(
+    return withIssue("takeaway-inside", issue(
       "takeaway",
       inside,
       -out / DTL.takeawayInsideInches.minor,
@@ -289,10 +296,10 @@ function takeaway(c: Context): Finding | null {
       "Whipping the hands in behind you gets the club too flat early. That often leads to a loop over the top or getting stuck: pushes and hooks.",
       frame.time,
       "plane",
-    );
+    ));
   }
   if (outside) {
-    return issue(
+    return withIssue("takeaway-outside", issue(
       "takeaway",
       outside,
       out / DTL.takeawayOutsideInches.minor,
@@ -301,7 +308,7 @@ function takeaway(c: Context): Finding | null {
       "Pushing the hands out toward the ball sets the club steep and outside, which often leads to an over-the-top downswing: pulls and slices.",
       frame.time,
       "plane",
-    );
+    ));
   }
   return strength(
     "takeaway",
@@ -325,7 +332,7 @@ function leadArm(c: Context): Finding | null {
   const detail = `About ${Math.round(bend)}° of bend at the lead elbow at the top.`;
   const g = grade(bend, DTL.leadArmBendDegrees);
   if (g) {
-    return issue(
+    return withIssue("lead-arm", issue(
       "lead-arm",
       g,
       bend / DTL.leadArmBendDegrees.minor,
@@ -333,7 +340,7 @@ function leadArm(c: Context): Finding | null {
       detail,
       "A bent lead arm shrinks the width of your swing, so you lose power and it's harder to return the club to the ball the same way each time. It often leads to thin and fat shots.",
       moments.top,
-    );
+    ));
   }
   return strength(
     "lead-arm",
@@ -367,7 +374,7 @@ function handPath(c: Context): Finding | null {
   const over = grade(worst.out, DTL.overTheTopInches);
   const under = grade(worst.inward, DTL.underPlaneInches);
   if (over) {
-    return issue(
+    return withIssue("over-the-top", issue(
       "plane",
       over,
       worst.out / DTL.overTheTopInches.minor,
@@ -376,10 +383,10 @@ function handPath(c: Context): Finding | null {
       "Starting down with the hands moving out puts the club above the plane, so it cuts across the ball from out to in. This often leads to pulls and slices.",
       worst.time,
       "plane",
-    );
+    ));
   }
   if (under) {
-    return issue(
+    return withIssue("under-plane", issue(
       "plane",
       under,
       worst.inward / DTL.underPlaneInches.minor,
@@ -388,7 +395,7 @@ function handPath(c: Context): Finding | null {
       "The club gets too far under the plane and comes from too far inside, so the face is hard to square. This often leads to pushes, hooks and fat shots.",
       worst.time,
       "plane",
-    );
+    ));
   }
   return strength(
     "plane",
@@ -410,7 +417,7 @@ function earlyExtension(c: Context): Finding | null {
 
   const g = grade(loss, DTL.spineAngleLossDegrees);
   if (g) {
-    return issue(
+    return withIssue("early-extension", issue(
       "spine",
       g,
       loss / DTL.spineAngleLossDegrees.minor,
@@ -419,7 +426,7 @@ function earlyExtension(c: Context): Finding | null {
       "Standing up through impact pulls the club away from the ball. It often causes thin and toe hits, blocks to the right, and quick hooks when you flip your hands to save it.",
       moments.impact,
       "spine",
-    );
+    ));
   }
   return strength(
     "spine",
@@ -438,7 +445,7 @@ function hipDepth(c: Context): Finding | null {
   const detail = `By impact your hips moved ${inches(Math.abs(toward))} ${toward >= 0 ? "toward" : "away from"} the ball.`;
   const g = grade(toward, DTL.hipDepthLossInches);
   if (g) {
-    return issue(
+    return withIssue("early-extension", issue(
       "hip-depth",
       g,
       toward / DTL.hipDepthLossInches.minor,
@@ -447,7 +454,7 @@ function hipDepth(c: Context): Finding | null {
       "When your hips push toward the ball, your arms run out of room. This often leads to blocks, hooks, shanks and thin shots.",
       moments.impact,
       "spine",
-    );
+    ));
   }
   return strength(
     "hip-depth",
@@ -475,7 +482,7 @@ function headDipLift(c: Context): Finding | null {
   if (dip.value >= lift) {
     const g = grade(dip.value, DTL.headDipLiftInches);
     if (g) {
-      return issue(
+      return withIssue("head-height", issue(
         "head-height",
         g,
         dip.value / DTL.headDipLiftInches.minor,
@@ -484,12 +491,12 @@ function headDipLift(c: Context): Finding | null {
         "Dropping your head lowers the bottom of your swing, which often leads to fat shots.",
         dip.time,
         "head",
-      );
+      ));
     }
   } else {
     const g = grade(lift, DTL.headDipLiftInches);
     if (g) {
-      return issue(
+      return withIssue("head-height", issue(
         "head-height",
         g,
         lift / DTL.headDipLiftInches.minor,
@@ -498,7 +505,7 @@ function headDipLift(c: Context): Finding | null {
         "Lifting your head raises the low point of your swing, which often leads to thin and topped shots.",
         moments.impact,
         "head",
-      );
+      ));
     }
   }
   return strength(
@@ -529,7 +536,7 @@ function hipSway(c: Context): Finding | null {
   const detail = `Your trail hip moved up to ${inches(worst.sway)} away from the target on the backswing.`;
   const g = grade(worst.sway, FO.hipSwayInches);
   if (g) {
-    return issue(
+    return withIssue("hip-sway", issue(
       "hips",
       g,
       worst.sway / FO.hipSwayInches.minor,
@@ -538,7 +545,7 @@ function hipSway(c: Context): Finding | null {
       "Sliding your hips instead of turning them makes it hard to get back to the ball on time. It often causes fat and thin shots, blocks and hooks. Keep your trail hip inside the orange line.",
       worst.time,
       "hips",
-    );
+    ));
   }
   return strength(
     "hips",
@@ -558,7 +565,7 @@ function headLateral(c: Context): Finding | null {
   const slide = grade(toward, FO.headSlideTowardTargetInches);
   const drift = grade(-toward, FO.headDriftAwayInches);
   if (slide) {
-    return issue(
+    return withIssue("head-lateral", issue(
       "head",
       slide,
       toward / FO.headSlideTowardTargetInches.minor,
@@ -567,10 +574,10 @@ function headLateral(c: Context): Finding | null {
       "Your upper body is sliding ahead of the ball. This often leads to pulls, slices, and low, weak shots. Keep your head behind the ball through impact.",
       moments.impact,
       "head",
-    );
+    ));
   }
   if (drift) {
-    return issue(
+    return withIssue("head-lateral", issue(
       "head",
       drift,
       -toward / FO.headDriftAwayInches.minor,
@@ -579,7 +586,7 @@ function headLateral(c: Context): Finding | null {
       "You're hanging back on your trail side, which often causes fat shots, thin shots and hooks.",
       moments.impact,
       "head",
-    );
+    ));
   }
   return strength(
     "head",
@@ -599,10 +606,10 @@ function weightShift(c: Context): Finding | null {
   const meaning =
     "Getting your weight onto your lead side lets you hit down on the ball. Staying back often causes fat and thin shots, high weak shots, and flipping at impact.";
   if (shift < FO.weightShiftInches.major) {
-    return issue("weight", "major", 2 + Math.abs(shift), "Reverse weight shift: your hips moved away from the target", detail, meaning, moments.impact, "hips");
+    return withIssue("weight-shift", issue("weight", "major", 2 + Math.abs(shift), "Reverse weight shift: your hips moved away from the target", detail, meaning, moments.impact, "hips"));
   }
   if (shift < FO.weightShiftInches.minor) {
-    return issue("weight", "minor", FO.weightShiftInches.minor / Math.max(shift, 0.1), "Your weight stayed back at impact", detail, meaning, moments.impact, "hips");
+    return withIssue("weight-shift", issue("weight", "minor", FO.weightShiftInches.minor / Math.max(shift, 0.1), "Your weight stayed back at impact", detail, meaning, moments.impact, "hips"));
   }
   return strength(
     "weight",
@@ -624,7 +631,7 @@ function reverseTilt(c: Context): Finding | null {
   const detail = `At the top your upper body leaned ${Math.round(Math.abs(lean))}° ${lean >= 0 ? "toward" : "away from"} the target.`;
   const g = grade(lean, FO.reverseTiltDegrees);
   if (g) {
-    return issue(
+    return withIssue("reverse-tilt", issue(
       "reverse-tilt",
       g,
       lean / FO.reverseTiltDegrees.minor,
@@ -633,7 +640,7 @@ function reverseTilt(c: Context): Finding | null {
       "Leaning toward the target at the top (a reverse pivot) leaves your weight on the wrong side. It often leads to fat and thin shots, pulls, slices and lost power.",
       moments.top,
       "spine",
-    );
+    ));
   }
   return strength(
     "reverse-tilt",
@@ -658,7 +665,7 @@ function shoulderTurn(c: Context): Finding | null {
   const detail = `Estimated shoulder turn at the top: about ${Math.round(turn)}° (from how much your shoulders narrow on camera).`;
   const t = FO.shoulderTurnDegrees;
   if (turn < t.minor) {
-    return issue(
+    return withIssue("shoulder-turn", issue(
       "shoulder-turn",
       turn < t.major ? "major" : "minor",
       t.minor / Math.max(turn, 1),
@@ -666,7 +673,7 @@ function shoulderTurn(c: Context): Finding | null {
       detail,
       "A short turn makes your arms do the work. It often costs distance and leads to an over-the-top move: pulls and slices.",
       moments.top,
-    );
+    ));
   }
   return strength(
     "shoulder-turn",
@@ -686,7 +693,7 @@ function puttHead(c: Context): Finding | null {
   const detail = `Your head moved ${inches(moved)} from address to impact.`;
   const g = grade(moved, PUTT.headMovementInches);
   if (g) {
-    return issue(
+    return withIssue("putt-stillness", issue(
       "head",
       g,
       moved / PUTT.headMovementInches.minor,
@@ -695,7 +702,7 @@ function puttHead(c: Context): Finding | null {
       "Moving your head shifts your shoulders and the putter face, which often leads to pulled or pushed putts. Keep your eyes over the ball until it's gone.",
       moments.impact,
       "head",
-    );
+    ));
   }
   return strength("head", "Your head stayed still", detail, "A still head keeps the putter face square and your contact centered.", moments.impact, "head");
 }
@@ -713,7 +720,7 @@ function puttLowerBody(c: Context): Finding | null {
   const detail = `Your hips and knees moved up to ${inches(worst.move)} during the stroke.`;
   const g = grade(worst.move, PUTT.lowerBodyMovementInches);
   if (g) {
-    return issue(
+    return withIssue("putt-stillness", issue(
       "lower-body",
       g,
       worst.move / PUTT.lowerBodyMovementInches.minor,
@@ -722,7 +729,7 @@ function puttLowerBody(c: Context): Finding | null {
       "Lower-body movement sways the putter off line and changes your contact, which hurts distance control. Keep your legs quiet and rock your shoulders.",
       worst.time,
       "spine",
-    );
+    ));
   }
   return strength(
     "lower-body",
@@ -747,7 +754,7 @@ function wristBreakdown(c: Context): Finding | null {
   const detail = `Your lead wrist angle changed by up to ${Math.round(worst.change)}° during the stroke.`;
   const g = grade(worst.change, PUTT.wristBreakdownDegrees);
   if (g) {
-    return issue(
+    return withIssue("wrist-breakdown", issue(
       "wrists",
       g,
       worst.change / PUTT.wristBreakdownDegrees.minor,
@@ -755,7 +762,7 @@ function wristBreakdown(c: Context): Finding | null {
       detail,
       "When the wrists hinge, the putter face and loft change, which often leads to pulls, pushes and poor distance control. Let your shoulders rock the putter.",
       worst.time,
-    );
+    ));
   }
   return strength(
     "wrists",
@@ -782,7 +789,7 @@ function followThrough(c: Context): Finding | null {
   const detail = `Backstroke ${inches(back)}, follow-through ${inches(through.length)} (${Math.round(ratio * 100)}% as long).`;
   const t = PUTT.followThroughRatio;
   if (ratio < t.minor) {
-    return issue(
+    return withIssue("putt-length", issue(
       "follow-through",
       ratio < t.major ? "major" : "minor",
       t.minor / Math.max(ratio, 0.1),
@@ -790,7 +797,7 @@ function followThrough(c: Context): Finding | null {
       detail,
       "A long backstroke with a short follow-through means you're slowing down through the ball. That often leaves putts short and pulled or pushed.",
       through.time,
-    );
+    ));
   }
   return strength(
     "follow-through",

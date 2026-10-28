@@ -265,6 +265,7 @@ export default function VideoAnalyzer({ videoUrl, mode, onChangeVideo }: Props) 
             swingFound={swingFound}
             activeId={activeFinding}
             onSelect={selectFinding}
+            mode={mode}
           />
         </div>
       )}
