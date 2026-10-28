@@ -9,8 +9,6 @@ type Props = {
   analysis: PoseAnalysis;
   cameraAngle: CameraAngle;
   onChangeAngle: (angle: CameraAngle) => void;
-  addressTime: number | null;
-  onJumpToAddress: () => void;
   onResetAids: () => void;
   drawing: DrawingApi;
 };
@@ -32,7 +30,7 @@ const TIPS = [
 // Results of the pose analysis: camera angle, skeleton toggle, and the
 // address frame — or friendly filming tips plus manual placement if it failed.
 export default function AnalysisPanel(props: Props) {
-  const { analysis, cameraAngle, onChangeAngle, addressTime, onJumpToAddress, onResetAids } = props;
+  const { analysis, cameraAngle, onChangeAngle, onResetAids } = props;
 
   if (analysis.status === "failed") {
     return (
@@ -84,20 +82,12 @@ export default function AnalysisPanel(props: Props) {
 
 
       {ready && (
-        <div className="grid grid-cols-2 gap-2">
-          <button
-            onClick={onJumpToAddress}
-            className="min-h-12 rounded-xl bg-fairway-50 text-sm font-semibold text-fairway-800 hover:bg-fairway-100"
-          >
-            Go to address ({(addressTime ?? analysis.address.time).toFixed(2)}s)
-          </button>
-          <button
-            onClick={onResetAids}
-            className="min-h-12 rounded-xl bg-fairway-50 text-sm font-semibold text-fairway-800 hover:bg-fairway-100"
-          >
-            Reset aids
-          </button>
-        </div>
+        <button
+          onClick={onResetAids}
+          className="min-h-12 rounded-xl bg-fairway-50 text-sm font-semibold text-fairway-800 hover:bg-fairway-100"
+        >
+          Reset aids
+        </button>
       )}
     </div>
   );

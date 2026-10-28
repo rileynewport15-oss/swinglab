@@ -145,10 +145,11 @@ export default function VideoAnalyzer({ videoUrl, mode, onChangeVideo }: Props) 
     return aidShownAt(aid, time, aidSettings, swingFound ? moments : null);
   }
 
-  function selectFinding(f: Finding) {
-    setActiveFinding(f.id);
-    setHighlightAid(f.aid ?? null);
-    jumpTo(f.time);
+  // Open a result (jump to it and highlight its aid), or close it (null).
+  function selectFinding(f: Finding | null) {
+    setActiveFinding(f?.id ?? null);
+    setHighlightAid(f?.aid ?? null);
+    if (f) jumpTo(f.time);
   }
 
   // Match the stage's shape to the video so drawings line up with the picture.
@@ -166,59 +167,78 @@ export default function VideoAnalyzer({ videoUrl, mode, onChangeVideo }: Props) 
   }, [videoUrl]);
 
   return (
-    // On wide screens: video and player on the left, tool panels on the right.
-    <div className="flex flex-col gap-4 lg:grid lg:grid-cols-[minmax(0,1fr)_380px] lg:items-start">
-      <div className="flex flex-col gap-4">
-        {/* Stage height: 65% of the screen on phones; on computers, as tall as fits
-            with the player controls still visible below it. */}
-        <div
-          className="no-select relative mx-auto w-full overflow-hidden rounded-3xl bg-black shadow-lg [--stage-h:65svh] lg:[--stage-h:calc(100svh-300px)]"
-          style={{ aspectRatio: aspect, maxWidth: `calc(var(--stage-h) * ${aspect})` }}
-        >
-          <video
-            ref={videoRef}
-            // "#t=0.001" makes iPhones show the first frame instead of a black box
-            src={`${videoUrl}#t=0.001`}
-            playsInline
-            muted
-            preload="auto"
-            className="absolute inset-0 h-full w-full object-contain"
-          />
-          {analysis.status === "ready" && aidSettings.visible.skeleton && (
-            <PoseOverlay
+    // Laptop/desktop: three columns. Left = training aids + swing analysis,
+    // center = video + controls (stays in view), right = results.
+    // Phone: one column in this order: video (pinned at the top) + controls,
+    // results, training aids, swing analysis. The column wrappers use
+    // `contents` on phones so their cards join this single stack.
+    <div className="flex flex-col gap-4 lg:grid lg:grid-cols-[minmax(280px,340px)_minmax(0,1fr)_minmax(300px,380px)] lg:items-start lg:gap-5">
+      {/* Center column */}
+      <div className="contents lg:sticky lg:top-4 lg:col-start-2 lg:row-start-1 lg:flex lg:flex-col lg:gap-4">
+        {/* On phones this bar pins the video to the top of the screen. */}
+        <div className="sticky top-0 z-20 -mx-4 bg-fairway-50 px-4 py-2 lg:static lg:m-0 lg:bg-transparent lg:p-0">
+          {/* Stage height: smaller on phones so the pinned video leaves room to
+              scroll; on computers, as tall as fits with the controls below. */}
+          <div
+            className="no-select relative mx-auto w-full overflow-hidden rounded-3xl bg-black shadow-lg [--stage-h:40svh] lg:[--stage-h:calc(100svh-430px)]"
+            style={{ aspectRatio: aspect, maxWidth: `calc(var(--stage-h) * ${aspect})` }}
+          >
+            <video
+              ref={videoRef}
+              // "#t=0.001" makes iPhones show the first frame instead of a black box
+              src={`${videoUrl}#t=0.001`}
+              playsInline
+              muted
+              preload="auto"
+              className="absolute inset-0 h-full w-full object-contain"
+            />
+            {analysis.status === "ready" && aidSettings.visible.skeleton && (
+              <PoseOverlay
+                videoRef={videoRef}
+                track={analysis.track}
+                shownAt={(time) => isAidShown("skeleton", time)}
+              />
+            )}
+            <DrawingCanvas
+              drawing={drawing}
+              highlightAid={highlightAid}
               videoRef={videoRef}
-              track={analysis.track}
-              shownAt={(time) => isAidShown("skeleton", time)}
+              aidShownAt={isAidShown}
+              showLabels={aidSettings.labels}
             />
-          )}
-          <DrawingCanvas
-            drawing={drawing}
-            highlightAid={highlightAid}
-            videoRef={videoRef}
-            aidShownAt={isAidShown}
-            showLabels={aidSettings.labels}
-          />
-          {analysis.status === "analyzing" && (
-            <AnalyzingOverlay
-              progress={analysis.progress}
-              askAngle={!angleAsked}
-              cameraAngle={cameraAngle}
-              onChooseAngle={changeAngle}
-            />
-          )}
+            {analysis.status === "analyzing" && (
+              <AnalyzingOverlay
+                progress={analysis.progress}
+                askAngle={!angleAsked}
+                cameraAngle={cameraAngle}
+                onChooseAngle={changeAngle}
+              />
+            )}
+          </div>
         </div>
-        <PlayerControls videoRef={videoRef} markers={markers} onMarkerMove={moveMarker} />
+        <PlayerControls
+          videoRef={videoRef}
+          markers={markers}
+          onMarkerMove={moveMarker}
+          addressTime={moments?.address ?? null}
+          onGoToAddress={() => moments && jumpTo(moments.address)}
+        />
       </div>
 
-      <div className="flex flex-col gap-4">
-        {analysis.status === "ready" && (
+      {/* Right column: results (fits the screen and scrolls inside on computers) */}
+      {analysis.status === "ready" && (
+        <div className="lg:sticky lg:top-4 lg:col-start-3 lg:row-start-1">
           <ResultsPanel
             findings={findings}
             swingFound={swingFound}
             activeId={activeFinding}
             onSelect={selectFinding}
           />
-        )}
+        </div>
+      )}
+
+      {/* Left column */}
+      <div className="contents lg:col-start-1 lg:row-start-1 lg:flex lg:flex-col lg:gap-4">
         <AidsPanel
           settings={aidSettings}
           onChange={setAidSettings}
@@ -230,8 +250,6 @@ export default function VideoAnalyzer({ videoUrl, mode, onChangeVideo }: Props) 
           analysis={analysis}
           cameraAngle={cameraAngle}
           onChangeAngle={changeAngle}
-          addressTime={moments?.address ?? null}
-          onJumpToAddress={() => moments && jumpTo(moments.address)}
           onResetAids={() => analysis.status === "ready" && placeAids(analysis.track, addressPose(), cameraAngle, addressTime())}
           drawing={drawing}
         />

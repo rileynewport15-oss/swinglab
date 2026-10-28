@@ -14,11 +14,13 @@ type Props = {
   markers?: Marker[];
   // Returns where the marker actually ended up (markers keep their order).
   onMarkerMove?: (id: string, time: number, done: boolean) => number | undefined;
+  addressTime?: number | null; // shows a "Go to address" button when set
+  onGoToAddress?: () => void;
 };
 
 // Play/pause, scrubber, speed and frame-step controls for the <video> above it.
 // The video element itself lives in VideoAnalyzer so the drawing canvas can sit on top.
-export default function PlayerControls({ videoRef, markers, onMarkerMove }: Props) {
+export default function PlayerControls({ videoRef, markers, onMarkerMove, addressTime, onGoToAddress }: Props) {
   const [playing, setPlaying] = useState(false);
   const [time, setTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -144,8 +146,8 @@ export default function PlayerControls({ videoRef, markers, onMarkerMove }: Prop
         />
       )}
 
-      {/* Frame back, play/pause, frame forward */}
-      <div className="flex items-center justify-center gap-3">
+      {/* Frame back, play/pause, frame forward, go to address */}
+      <div className="flex items-center justify-center gap-2">
         <ControlButton label="Back one frame" onClick={() => stepFrame(-1)}>
           ⏮︎ <span className="text-xs">Frame</span>
         </ControlButton>
@@ -159,6 +161,14 @@ export default function PlayerControls({ videoRef, markers, onMarkerMove }: Prop
         <ControlButton label="Forward one frame" onClick={() => stepFrame(1)}>
           <span className="text-xs">Frame</span> ⏭︎
         </ControlButton>
+        {addressTime != null && onGoToAddress && (
+          <ControlButton label={`Go to address (${addressTime.toFixed(2)}s)`} onClick={onGoToAddress}>
+            <span className="flex flex-col items-center leading-tight">
+              <span className="text-xs">Go to</span>
+              <span className="text-xs">address</span>
+            </span>
+          </ControlButton>
+        )}
       </div>
 
       {/* Speed */}

@@ -21,8 +21,8 @@ export default function Home() {
 
   return (
     <div className="flex flex-1 flex-col">
-      <header className="sticky top-0 z-20 bg-fairway-800 px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] shadow-md">
-        <div className="mx-auto flex max-w-xl flex-col gap-3 lg:max-w-6xl lg:flex-row lg:items-center lg:justify-between">
+      <header className="bg-fairway-800 px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] shadow-md">
+        <div className="mx-auto flex max-w-xl flex-col gap-3 lg:max-w-[1400px] lg:flex-row lg:items-center lg:justify-between">
           <h1 className="text-lg font-bold tracking-tight text-white">
             ⛳ SwingLab
           </h1>
@@ -32,7 +32,7 @@ export default function Home() {
         </div>
       </header>
 
-      <main className="mx-auto flex w-full max-w-xl lg:max-w-6xl flex-1 flex-col gap-4 px-4 py-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+      <main className="mx-auto flex w-full max-w-xl lg:max-w-[1400px] flex-1 flex-col gap-4 px-4 py-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
         <p className="text-sm font-medium text-fairway-700">
           Reviewing: <span className="font-bold">{modeLabel}</span>
         </p>

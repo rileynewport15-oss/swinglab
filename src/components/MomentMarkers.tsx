@@ -101,7 +101,8 @@ export function MomentChips({ markers, onSeek, onNudge }: ChipProps) {
             >
               {m.short}
             </span>
-            <span className="hidden sm:inline">{m.label}</span>
+            {/* Full names where there is room (tablets, very wide screens); just the letter otherwise. */}
+            <span className="hidden sm:inline lg:hidden 2xl:inline">{m.label}</span>
             <span className="tabular-nums text-fairway-700">{m.time.toFixed(2)}s</span>
           </button>
           <NudgeButton label={`Move ${m.label} one frame later`} onClick={() => onNudge(m.id, FRAME)}>

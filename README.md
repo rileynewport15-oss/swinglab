@@ -30,7 +30,9 @@ A site for reviewing full swing and putting videos.
   (two ends), head circle (center of head), spine angle (hips, then neck; shows tilt)
 - Every drawing can be adjusted: drag its dots (48px grab areas), the line itself, or its label
 - Mode selector: Full Swing / Putt
-- Wide layout on computers (video left, tools right); stacked layout on phones
+- Layout: three columns on computers (training aids + swing analysis | video + controls,
+  which stay in view | results). On phones: video pinned at the top, then controls,
+  results, training aids, swing analysis
 
 ### Keyboard shortcuts (computer)
 
