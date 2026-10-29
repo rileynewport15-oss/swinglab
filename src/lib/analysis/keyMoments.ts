@@ -1,4 +1,3 @@
-import type { ShotMode } from "@/config/analysisConfig";
 import { distance, handsPosition, torsoLength, type PoseFrame, type PoseTrack } from "../pose/landmarks";
 
 export type MomentId = "address" | "top" | "impact";
@@ -11,34 +10,28 @@ export const MOMENT_LABELS: Record<MomentId, string> = {
 };
 
 // The hands must move at least this far (in torso lengths) for a back-and-
-// through motion to count as a stroke. Small enough for a short putt.
-const MIN_STROKE = 0.12;
+// through motion to count as a swing. Real full swings reach 1.5–2 at the
+// top; a small hitch or tracking blip early in the takeaway mustn't count.
+const MIN_STROKE = 0.5;
 // After the top, the hands must come back below this share of their furthest
 // point before we accept that the downswing has started.
 const RETURN_SHARE = 0.6;
 // Frames within this share of the furthest point count as "paused at the top".
 const TOP_PLATEAU = 0.9;
-// Takeaway starts once the hands have moved this far from address (torso
-// lengths), or TAKEAWAY_SHARE of the way to the top for short putting strokes
-// (but at least TAKEAWAY_MIN, so tracking jitter doesn't count).
+// Takeaway starts once the hands have moved this far from address (torso lengths).
 const TAKEAWAY_MOVE = 0.08;
-const TAKEAWAY_SHARE = 0.1;
-const TAKEAWAY_MIN = 0.05;
 // The club head starts back before the hands visibly move (the wrists hinge
 // first), and pose detection can't see the club. So the takeaway is set this
-// many seconds before the hands move. Checked frame by frame on real full
-// swings and putts (putts have almost no wrist hinge, so it's only the short
-// delay before the hands have moved far enough to count).
-export const CLUB_LEAD: Record<ShotMode, number> = { "full-swing": 0.12, putt: 0.05 };
+// many seconds before the hands move. Checked frame by frame on real swings.
+export const CLUB_LEAD = 0.12;
 // Address is shown this many seconds before the hands move, when the club is
 // still resting behind the ball.
 export const ADDRESS_LEAD = 0.25;
 
 /**
- * Find the top of the backswing and impact after the address time.
- *
- * Works for full swings and putts alike by tracking how far the hands are
- * from where they were at address:
+ * Find the top of the backswing and impact after the address time (full
+ * swings; putts have their own, see src/lib/putting/moments.ts), by tracking
+ * how far the hands are from where they were at address:
  *  - top    = the first time that distance peaks before shrinking again
  *  - impact = after the top, the moment the hands come back closest to address
  */
@@ -92,9 +85,7 @@ export function takeawayTime(track: PoseTrack, moments: Pick<KeyMoments, "addres
   if (frames.length < 2) return moments.address;
   const ruler = torsoLength(frames[0].landmarks, track) || 1;
   const home = handsPosition(frames[0].landmarks, track);
-  const moved = frames.map((f) => distance(handsPosition(f.landmarks, track), home) / ruler);
-  const threshold = Math.min(TAKEAWAY_MOVE, Math.max(TAKEAWAY_MIN, Math.max(...moved) * TAKEAWAY_SHARE));
-  const i = moved.findIndex((d) => d > threshold);
+  const i = frames.findIndex((f) => distance(handsPosition(f.landmarks, track), home) / ruler > TAKEAWAY_MOVE);
   return i > 0 ? frames[i - 1].time : moments.address;
 }
 

@@ -1,6 +1,6 @@
 import { IMPROVEMENTS, type Drill, type IssueKey } from "@/data/improvements";
 import type { ShotMode } from "@/config/analysisConfig";
-import type { Finding } from "./metrics";
+import type { Finding } from "./findings";
 
 export type PlanItem = { name: string; detail: string; minutes: number };
 

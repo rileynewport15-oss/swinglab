@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { Finding } from "@/lib/analysis/metrics";
+import type { Finding } from "@/lib/analysis/findings";
 import type { ShotMode } from "@/config/analysisConfig";
 import { buildPracticePlan } from "@/lib/analysis/practicePlan";
 import HowToFix from "./HowToFix";
@@ -13,14 +13,20 @@ type Props = {
   activeId: string | null; // the expanded result
   onSelect: (finding: Finding | null) => void; // open a result, or close it (null)
   mode: ShotMode;
-  noSwingHint?: string; // shown instead of the generic message when no stroke is found
+  note?: string; // extra line under the heading (e.g. what this camera angle can't show)
+};
+
+const NOT_FOUND: Record<ShotMode, string> = {
+  "full-swing":
+    "We couldn't spot a full swing in this clip, so there are no results yet. Make sure the whole swing is in the video, or drag the A / T / I markers on the scrubber.",
+  putt: "We couldn't time this putt, so there are no results yet. Start recording while you're still at setup (before the putter moves), keep the camera still, and keep filming until you've held your finish.",
 };
 
 // "Areas to improve" and "Strengths" as collapsible sections. Each result shows
 // just its badge and title; clicking it opens the details, jumps the video to
 // that moment and highlights the matching aid. On computers the card fits the
 // screen and scrolls inside itself.
-export default function ResultsPanel({ findings, swingFound, activeId, onSelect, mode, noSwingHint }: Props) {
+export default function ResultsPanel({ findings, swingFound, activeId, onSelect, mode, note }: Props) {
   const [open, setOpen] = useState({ improve: true, strengths: false });
   const [showPlan, setShowPlan] = useState(false);
   const improve = findings.filter((f) => f.status === "improve");
@@ -31,11 +37,9 @@ export default function ResultsPanel({ findings, swingFound, activeId, onSelect,
       <div className="p-4 pb-2">
         <h2 className="font-bold text-fairway-900">Your results</h2>
         <p className="text-xs text-fairway-700">
-          {swingFound
-            ? "Biggest issues first. Click a result for details and to see it on the video."
-            : (noSwingHint ??
-              "We couldn't spot a full swing in this clip, so there are no results yet. Make sure the whole swing is in the video, or drag the A / T / I markers on the scrubber.")}
+          {swingFound ? "Biggest issues first. Click a result for details and to see it on the video." : NOT_FOUND[mode]}
         </p>
+        {swingFound && note && <p className="mt-1 text-xs text-fairway-600">{note}</p>}
         {swingFound && (
           <button
             onClick={() => setShowPlan(true)}

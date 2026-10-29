@@ -20,14 +20,11 @@ export const ANALYSIS_CONFIG = {
   // points it uses is at least this high.
   minConfidence: 0.6,
 
-  // Tempo = backswing time ÷ downswing time. Inside [goodMin, goodMax] is a
-  // strength; outside [okMin, okMax] is a major issue; in between is minor.
-  tempo: {
-    "full-swing": { ideal: 3, goodMin: 2.5, goodMax: 3.5, okMin: 2, okMax: 4.5 },
-    putt: { ideal: 2, goodMin: 1.6, goodMax: 2.5, okMin: 1.3, okMax: 3 },
-  },
-
   fullSwing: {
+    // Tempo = backswing time ÷ downswing time. Inside [goodMin, goodMax] is a
+    // strength; outside [okMin, okMax] is a major issue; in between is minor.
+    tempo: { ideal: 3, goodMin: 2.5, goodMax: 3.5, okMin: 2, okMax: 4.5 },
+
     downTheLine: {
       // Start of the downswing (first 40%): how far the hands move out toward
       // the ball (over the top) or in behind the golfer (stuck), in inches.
@@ -79,17 +76,54 @@ export const ANALYSIS_CONFIG = {
     },
   },
 
-  putt: {
-    // Head movement from address to impact (measured from the feet), inches.
+  // ── Putting ───────────────────────────────────────────────────────────────
+  putting: {
+    // Tempo = backstroke time ÷ forward stroke time (end of backstroke to
+    // impact). Same scheme as the full swing.
+    tempo: { ideal: 2, goodMin: 1.6, goodMax: 2.5, okMin: 1.3, okMax: 3 },
+
+    // Face On: follow-through length ÷ backstroke length (hands, along the
+    // target line). It should be about equal or a bit longer. Shorter than
+    // `short.minor` is a minor issue (decelerating), shorter than `short.major`
+    // a major one; longer than `long.minor` / `long.major` likewise (usually a
+    // short, jabby backstroke).
+    strokeLengthRatio: { short: { minor: 0.85, major: 0.65 }, long: { minor: 1.9, major: 2.6 } },
+
+    // Head movement from setup to impact (measured from the feet), inches.
     // The ear landmarks wobble ~0.5–1 in on still heads (checked frame by
     // frame on real putts), so smaller limits flag steady heads.
     headMovementInches: { minor: 1.5, major: 2.5 } as Limits,
     // Hips and knees movement during the stroke (measured from the feet), inches.
     lowerBodyMovementInches: { minor: 1, major: 2 } as Limits,
-    // Face On: change in the lead wrist angle during the stroke, degrees.
-    wristBreakdownDegrees: { minor: 10, major: 20 } as Limits,
-    // Face On: follow-through length ÷ backstroke length. Below `minor` = minor
-    // issue (decelerating), below `major` = major.
-    followThroughRatio: { minor: 0.8, major: 0.6 },
+
+    // Face On wrist breakdown, two ways (either one past its limit counts):
+    // - Triangle: how much the pendulum triangle (both shoulders and the
+    //   hands) changes shape, in degrees: the hands swinging ahead of or behind
+    //   where the rocking shoulders would carry them. Good strokes measured
+    //   3–5° (tracking wobble).
+    // - Lead wrist: change in the angle between the lead forearm and hand, in
+    //   degrees. A wrist flick barely moves the triangle's corner (the wrists
+    //   are the corner), so this catches it. Good strokes measured 3–8°.
+    // Through impact (end of backstroke to just after impact) is what matters
+    // most; the backstroke gets `backstrokeAllowance` times more room.
+    triangleChangeDegrees: { minor: 7, major: 12 } as Limits,
+    leadWristChangeDegrees: { minor: 12, major: 20 } as Limits,
+    backstrokeAllowance: 1.5,
+
+    // Face On: share of the hands' swing that comes from the shoulders
+    // rocking (1 = all shoulders, a perfect pendulum). Below `minor` = minor
+    // issue (arms and hands doing the work), below `major` = major.
+    shoulderRockShare: { minor: 0.7, major: 0.5 },
+
+    // Down the Line: how far the hand moves in toward the body or out toward
+    // the ball at the end of the backstroke and at the finish, inches. A
+    // gentle arc is normal; the hands move much less than the putter head.
+    // Perspective adds up to ~1 in (the hands come toward the camera going
+    // back and move away through), so smaller limits flag straight strokes.
+    strokePathInches: { minor: 2, major: 3.5 } as Limits,
+    // Down the Line: eyes over the ball. Inches the eyes are inside the ball
+    // (between the ball and the feet) or outside it, at setup.
+    eyesInsideBallInches: { minor: 2, major: 4 } as Limits,
+    eyesOutsideBallInches: { minor: 0.75, major: 2 } as Limits,
   },
 } as const;

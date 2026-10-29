@@ -9,15 +9,22 @@ import AnalyzingOverlay from "./AnalyzingOverlay";
 import AnalysisPanel from "./AnalysisPanel";
 import ResultsPanel from "./ResultsPanel";
 import AidsPanel from "./AidsPanel";
+import PuttOverlay from "./PuttOverlay";
 import { useAidSettings } from "@/hooks/useAidSettings";
-import { AID_NAMES, aidShownAt, type AidKey, type AidSettings } from "@/lib/aidVisibility";
+import { AIDS_FOR, AID_NAMES, aidShownAt, type AidKey, type AidSettings } from "@/lib/aidVisibility";
 import type { Marker } from "./MomentMarkers";
+import type { Jump } from "./PlayerControls";
 import { useDrawing } from "@/hooks/useDrawing";
 import { usePoseAnalysis } from "@/hooks/usePoseAnalysis";
 import { buildAutoAids, type CameraAngle } from "@/lib/pose/autoAids";
-import { nearestFrame, type Landmark, type PoseTrack } from "@/lib/pose/landmarks";
-import { MOMENT_LABELS, type KeyMoments, type MomentId } from "@/lib/analysis/keyMoments";
-import { analyzeSwing, type Finding } from "@/lib/analysis/metrics";
+import { nearestFrame, type Landmark, type PoseTrack, type Px } from "@/lib/pose/landmarks";
+import type { KeyMoments } from "@/lib/analysis/keyMoments";
+import { analyzeSwing } from "@/lib/analysis/metrics";
+import type { Finding } from "@/lib/analysis/findings";
+import { analyzePutt } from "@/lib/putting/metrics";
+import { buildPuttAids } from "@/lib/putting/aids";
+import type { PuttMoments } from "@/lib/putting/moments";
+import { MOMENT_SPECS, allFound, momentTime, type Moments } from "@/lib/moments";
 import type { ShotMode } from "@/config/analysisConfig";
 import type { AidKind } from "@/lib/shapes";
 
@@ -27,12 +34,7 @@ type Props = {
   onChangeVideo: () => void;
 };
 
-const MARKER_STYLE: Record<MomentId, { short: string; color: string }> = {
-  address: { short: "A", color: "#0ea5e9" },
-  top: { short: "T", color: "#f59e0b" },
-  impact: { short: "I", color: "#ef4444" },
-};
-const MIN_GAP = 0.03; // seconds kept between markers so their order stays Address → Top → Impact
+const MIN_GAP = 0.03; // seconds kept between markers so they stay in order (e.g. Address → Top → Impact)
 
 // The camera angle is asked once, then remembered in this browser.
 const ANGLE_KEY = "swinglab.cameraAngle";
@@ -60,7 +62,7 @@ export default function VideoAnalyzer({ videoUrl, mode, onChangeVideo }: Props) 
   const [cameraAngle, setCameraAngle] = useState<CameraAngle>(() => loadAngle() ?? "face-on");
   const [angleAsked, setAngleAsked] = useState(() => loadAngle() !== null);
   const [aidSettings, setAidSettings] = useAidSettings();
-  const [moments, setMoments] = useState<KeyMoments | null>(null);
+  const [moments, setMoments] = useState<Moments | null>(null);
   const [activeFinding, setActiveFinding] = useState<string | null>(null);
   const [highlightAid, setHighlightAid] = useState<AidKind | null>(null);
 
@@ -71,71 +73,86 @@ export default function VideoAnalyzer({ videoUrl, mode, onChangeVideo }: Props) 
     video.currentTime = time;
   }
 
-  // The address time the aids were last placed at.
+  // The address (setup, for putts) time the aids were last placed at.
   const aidsAddressRef = useRef<number | null>(null);
+  const specs = MOMENT_SPECS[mode];
+  const firstMoment = specs[0].id; // address, or setup for putts
 
-  function placeAids(track: PoseTrack, addressPose: Landmark[], angle: CameraAngle, addressTime: number) {
-    drawing.placeAutoAids(buildAutoAids(addressPose, angle, track));
-    aidsAddressRef.current = addressTime;
+  function placeAids(track: PoseTrack, pose: Landmark[], angle: CameraAngle, time: number, m: Moments | null, ball: Px | null) {
+    drawing.placeAutoAids(
+      mode === "putt"
+        ? buildPuttAids(pose, angle, track, allFound(m, mode) ? (m as PuttMoments) : null, ball)
+        : buildAutoAids(pose, angle, track),
+    );
+    aidsAddressRef.current = time;
   }
 
-  // When analysis finishes: place the aids, mark the key moments, show the address frame.
-  const analysis = usePoseAnalysis(videoUrl, mode, (track, address, found) => {
-    placeAids(track, address.landmarks, cameraAngle, address.time);
-    setMoments(found ?? { address: address.time, top: NaN, impact: NaN });
+  // When analysis finishes: place the aids, mark the key moments, show the address (setup) frame.
+  const analysis = usePoseAnalysis(videoUrl, mode, (track, address, found, ball) => {
+    // Without the swing, keep just the address marker so it can still be adjusted.
+    const m = found ?? (Object.fromEntries(specs.map((x, i) => [x.id, i === 0 ? address.time : NaN])) as Moments);
+    placeAids(track, address.landmarks, cameraAngle, address.time, m, ball);
+    setMoments(m);
     jumpTo(address.time);
     saveAngle(cameraAngle); // counts as answered, even if the default was kept
     setAngleAsked(true);
   });
+  const ball = analysis.status === "ready" ? analysis.ball : null;
 
   function changeAngle(angle: CameraAngle) {
     setCameraAngle(angle);
     saveAngle(angle);
     setAngleAsked(true);
-    if (analysis.status === "ready") placeAids(analysis.track, addressPose(), angle, addressTime());
+    if (analysis.status === "ready") placeAids(analysis.track, addressPose(), angle, addressTime(), moments, ball);
   }
 
   // The (possibly user-adjusted) address marker time, and the pose there.
   function addressTime(): number {
-    return moments?.address ?? (analysis.status === "ready" ? analysis.address.time : 0);
+    const t = momentTime(moments, firstMoment);
+    return Number.isFinite(t) ? t : analysis.status === "ready" ? analysis.address.time : 0;
   }
   function addressPose(): Landmark[] {
     if (analysis.status !== "ready") return [];
     return nearestFrame(analysis.track, addressTime())?.landmarks ?? analysis.address.landmarks;
   }
 
-  const swingFound = moments !== null && Number.isFinite(moments.top) && Number.isFinite(moments.impact);
+  const swingFound = allFound(moments, mode);
 
-  // Findings recalculate instantly when a marker, the mode or the camera angle changes.
-  const findings = useMemo(
-    () =>
-      analysis.status === "ready" && swingFound && moments
-        ? analyzeSwing({ track: analysis.track, moments, mode, angle: cameraAngle })
-        : [],
-    [analysis, swingFound, moments, mode, cameraAngle],
-  );
+  // Findings recalculate instantly when a marker or the camera angle changes.
+  const findings = useMemo(() => {
+    if (analysis.status !== "ready" || !swingFound || !moments) return [];
+    return mode === "putt"
+      ? analyzePutt({ track: analysis.track, moments: moments as PuttMoments, angle: cameraAngle, ball: analysis.ball })
+      : analyzeSwing({ track: analysis.track, moments: moments as KeyMoments, angle: cameraAngle });
+  }, [analysis, swingFound, moments, mode, cameraAngle]);
 
-  const markers: Marker[] = moments
-    ? (Object.keys(MOMENT_LABELS) as MomentId[])
-        .filter((id) => Number.isFinite(moments[id]))
-        .map((id) => ({ id, label: MOMENT_LABELS[id], time: moments[id], ...MARKER_STYLE[id] }))
-    : [];
+  const markers: Marker[] = specs
+    .filter((spec) => Number.isFinite(momentTime(moments, spec.id)))
+    .map((spec) => ({ ...spec, time: momentTime(moments, spec.id) }));
+
+  // "Go to" buttons: address for full swings, every moment for putts.
+  const jumps: Jump[] = (mode === "putt" ? markers : markers.slice(0, 1)).map((m) => ({
+    id: m.id,
+    label: mode === "putt" ? m.label : m.label.toLowerCase(),
+    time: m.time,
+  }));
 
   function moveMarker(id: string, time: number, done: boolean): number | undefined {
     if (!moments) return;
-    const m = { ...moments };
-    // Keep the order Address → Top → Impact.
-    if (id === "address") m.address = Math.min(time, (Number.isFinite(m.top) ? m.top : Infinity) - MIN_GAP);
-    if (id === "top") m.top = Math.min(Math.max(time, m.address + MIN_GAP), m.impact - MIN_GAP);
-    if (id === "impact") m.impact = Math.max(time, m.top + MIN_GAP);
-    setMoments(m);
-    // Aids are anchored to address, so move them when the address marker is
+    const m = { ...moments } as Record<string, number>;
+    // Keep the markers in order, a little apart.
+    const i = specs.findIndex((x) => x.id === id);
+    const prev = i > 0 ? m[specs[i - 1].id] : NaN;
+    const next = i < specs.length - 1 ? m[specs[i + 1].id] : NaN;
+    m[id] = Math.min(Math.max(time, Number.isFinite(prev) ? prev + MIN_GAP : -Infinity), Number.isFinite(next) ? next - MIN_GAP : Infinity);
+    setMoments(m as Moments);
+    // Aids are anchored to address (setup), so move them when that marker is
     // dropped somewhere new (a tap that doesn't move it keeps any fine-tuning).
-    if (id === "address" && done && analysis.status === "ready" && m.address !== aidsAddressRef.current) {
-      const pose = nearestFrame(analysis.track, m.address)?.landmarks;
-      if (pose) placeAids(analysis.track, pose, cameraAngle, m.address);
+    if (id === firstMoment && done && analysis.status === "ready" && m[id] !== aidsAddressRef.current) {
+      const pose = nearestFrame(analysis.track, m[id])?.landmarks;
+      if (pose) placeAids(analysis.track, pose, cameraAngle, m[id], m as Moments, ball);
     }
-    return m[id as MomentId];
+    return m[id];
   }
 
   // Is an aid on screen at this moment? Follows the Training aids card, with
@@ -143,7 +160,10 @@ export default function VideoAnalyzer({ videoUrl, mode, onChangeVideo }: Props) 
   // even if switched off (a temporary highlight, see clearHighlight).
   function isAidShown(aid: AidKey, time: number) {
     if (aid === highlightAid) return true;
-    return aidShownAt(aid, time, aidSettings, swingFound ? moments : null);
+    // Only the aids for this mode and camera angle (a switched-on face on aid
+    // stays hidden down the line, where its toggle isn't shown).
+    if (!AIDS_FOR[mode][cameraAngle].includes(aid)) return false;
+    return aidShownAt(aid, time, aidSettings, swingFound ? moments : null, mode);
   }
 
   // The highlighted aid is switched off in the card, so it's only on screen
@@ -223,6 +243,16 @@ export default function VideoAnalyzer({ videoUrl, mode, onChangeVideo }: Props) 
                 shownAt={(time) => isAidShown("skeleton", time)}
               />
             )}
+            {analysis.status === "ready" && mode === "putt" && (
+              <PuttOverlay
+                videoRef={videoRef}
+                track={analysis.track}
+                moments={swingFound ? (moments as PuttMoments) : null}
+                shownAt={isAidShown}
+                highlightAid={highlightAid}
+                showLabels={aidSettings.labels}
+              />
+            )}
             <DrawingCanvas
               drawing={drawing}
               highlightAid={highlightAid}
@@ -240,6 +270,7 @@ export default function VideoAnalyzer({ videoUrl, mode, onChangeVideo }: Props) 
             )}
             {analysis.status === "analyzing" && (
               <AnalyzingOverlay
+                mode={mode}
                 progress={analysis.progress}
                 askAngle={!angleAsked}
                 cameraAngle={cameraAngle}
@@ -252,8 +283,7 @@ export default function VideoAnalyzer({ videoUrl, mode, onChangeVideo }: Props) 
           videoRef={videoRef}
           markers={markers}
           onMarkerMove={moveMarker}
-          addressTime={moments?.address ?? null}
-          onGoToAddress={() => moments && jumpTo(moments.address)}
+          jumps={jumps}
         />
       </div>
 
@@ -266,9 +296,9 @@ export default function VideoAnalyzer({ videoUrl, mode, onChangeVideo }: Props) 
             activeId={activeFinding}
             onSelect={selectFinding}
             mode={mode}
-            noSwingHint={
+            note={
               mode === "putt" && cameraAngle === "down-the-line"
-                ? "We couldn't measure this putt. From down the line the putter moves toward and away from the camera, so the stroke barely shows on video. Film putts Face On (camera in front of you, at hip height) to get stroke results."
+                ? "From down the line you see the stroke path and your eye line. Tempo, stroke length and the pendulum (shoulders, triangle) need a Face On video."
                 : undefined
             }
           />
@@ -280,15 +310,19 @@ export default function VideoAnalyzer({ videoUrl, mode, onChangeVideo }: Props) 
         <AidsPanel
           settings={aidSettings}
           onChange={changeAidSettings}
+          mode={mode}
           cameraAngle={cameraAngle}
           skeletonAvailable={analysis.status === "ready"}
           timingAvailable={swingFound}
         />
         <AnalysisPanel
+          mode={mode}
           analysis={analysis}
           cameraAngle={cameraAngle}
           onChangeAngle={changeAngle}
-          onResetAids={() => analysis.status === "ready" && placeAids(analysis.track, addressPose(), cameraAngle, addressTime())}
+          onResetAids={() =>
+            analysis.status === "ready" && placeAids(analysis.track, addressPose(), cameraAngle, addressTime(), moments, ball)
+          }
           drawing={drawing}
         />
         <DrawingToolbar drawing={drawing} />

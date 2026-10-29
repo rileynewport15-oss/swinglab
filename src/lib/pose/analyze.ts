@@ -16,6 +16,8 @@ type Options = {
   start?: number;
   end?: number;
   fps?: number;
+  // Highest rate for a whole-video pass (putts use more: the stroke is small and quick).
+  maxFps?: number;
 };
 
 /**
@@ -25,7 +27,7 @@ type Options = {
  */
 export async function analyzeVideo(
   url: string,
-  { onProgress, signal, start = 0, end, fps: requestedFps }: Options = {},
+  { onProgress, signal, start = 0, end, fps: requestedFps, maxFps = MAX_FPS }: Options = {},
 ): Promise<PoseTrack> {
   const landmarker = await getPoseLandmarker();
   const video = document.createElement("video");
@@ -40,7 +42,7 @@ export async function analyzeVideo(
     const stop = Math.min(end ?? duration, duration, start + MAX_SECONDS);
     const length = stop - start;
     // Short clips get up to 15 frames per second; long ones fewer, so analysis stays quick.
-    const fps = requestedFps ?? Math.min(MAX_FPS, Math.max(MIN_FPS, TARGET_SAMPLES / length));
+    const fps = requestedFps ?? Math.min(maxFps, Math.max(MIN_FPS, TARGET_SAMPLES / length));
     const step = 1 / fps;
 
     const frames: PoseFrame[] = [];

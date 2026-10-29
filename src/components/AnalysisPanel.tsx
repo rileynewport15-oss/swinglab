@@ -4,8 +4,10 @@ import TrainingAidsMenu from "./TrainingAidsMenu";
 import { CAMERA_ANGLES, type CameraAngle } from "@/lib/pose/autoAids";
 import type { PoseAnalysis } from "@/hooks/usePoseAnalysis";
 import type { DrawingApi } from "@/hooks/useDrawing";
+import type { ShotMode } from "@/config/analysisConfig";
 
 type Props = {
+  mode: ShotMode;
   analysis: PoseAnalysis;
   cameraAngle: CameraAngle;
   onChangeAngle: (angle: CameraAngle) => void;
@@ -30,7 +32,8 @@ const TIPS = [
 // Results of the pose analysis: camera angle, skeleton toggle, and the
 // address frame — or friendly filming tips plus manual placement if it failed.
 export default function AnalysisPanel(props: Props) {
-  const { analysis, cameraAngle, onChangeAngle, onResetAids } = props;
+  const { mode, analysis, cameraAngle, onChangeAngle, onResetAids } = props;
+  const putt = mode === "putt";
 
   if (analysis.status === "failed") {
     return (
@@ -55,11 +58,13 @@ export default function AnalysisPanel(props: Props) {
   return (
     <div className="flex flex-col gap-3 rounded-3xl bg-white p-4 shadow-sm">
       <div>
-        <h2 className="font-bold text-fairway-900">Swing analysis</h2>
+        <h2 className="font-bold text-fairway-900">{putt ? "Putt analysis" : "Swing analysis"}</h2>
         <p className="text-xs text-fairway-700">
-          {ready
-            ? "Aids are set at your address position and stay fixed while you swing. Drag them to fine-tune, or use the Training aids card to choose which show and when."
-            : "Finding your address position…"}
+          {!ready
+            ? `Finding your ${putt ? "setup" : "address"} position…`
+            : putt
+              ? "Boxes, lines and markers are set at your setup position and stay fixed; the shoulder line, triangle and hand path follow you through the stroke. Drag the fixed ones to fine-tune, or use the Training aids card to choose which show and when."
+              : "Aids are set at your address position and stay fixed while you swing. Drag them to fine-tune, or use the Training aids card to choose which show and when."}
         </p>
       </div>
 

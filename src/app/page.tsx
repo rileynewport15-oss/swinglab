@@ -39,6 +39,9 @@ export default function Home() {
 
         {videoUrl ? (
           <VideoAnalyzer
+            // Putts and full swings are analyzed differently, so switching
+            // mode starts the review of the same video over.
+            key={mode}
             videoUrl={videoUrl}
             mode={mode}
             onChangeVideo={() => setVideoUrl(null)}

@@ -32,7 +32,10 @@ export type IssueKey =
   | "putt-tempo"
   | "putt-stillness"
   | "wrist-breakdown"
-  | "putt-length";
+  | "putt-length"
+  | "shoulder-rock"
+  | "putt-path"
+  | "eye-line";
 
 export type Drill = {
   name: string;
@@ -544,5 +547,71 @@ export const IMPROVEMENTS: Record<IssueKey, Improvement> = {
       },
     ],
     aids: [puttingGate],
+  },
+  "shoulder-rock": {
+    issue: "Arms and hands driving the stroke",
+    drills: [
+      {
+        name: "Club across the chest",
+        how: "Hold a club across your chest with both arms crossed over it. Rock your shoulders so the club tilts like a seesaw, then copy that feel with the putter.",
+        reps: "20 practice rocks, then 20 putts",
+        minutes: 10,
+        youtubeId: "",
+        searchQuery: "putting drill club across chest shoulder rock",
+      },
+      {
+        name: "Armpit squeeze",
+        how: "Tuck a headcover or glove under each armpit and putt without letting either drop, so the arms can't swing on their own.",
+        reps: "20 putts from 6 feet",
+        minutes: 10,
+        youtubeId: "",
+        searchQuery: "putting drill headcover under arms",
+      },
+    ],
+    aids: [puttingMirror],
+  },
+  "putt-path": {
+    issue: "Putting stroke path",
+    drills: [
+      {
+        name: "Two-stick track",
+        how: "Lay two alignment sticks on the green just wider than your putter head and stroke putts without touching either stick.",
+        reps: "3 sets of 10 putts",
+        minutes: 15,
+        youtubeId: "",
+        searchQuery: "putting drill two alignment sticks path",
+      },
+      {
+        name: "Gate at the ball",
+        how: "Push two tees into the green either side of the putter head at the ball, a few millimeters wider than the head, and putt through the gate.",
+        reps: "20 putts",
+        minutes: 10,
+        youtubeId: "",
+        searchQuery: "putting gate drill tees path",
+      },
+    ],
+    aids: [alignmentSticks, puttingGate],
+  },
+  "eye-line": {
+    issue: "Eyes not over the ball",
+    drills: [
+      {
+        name: "Drop a ball from your eyes",
+        how: "Set up, hold a ball against the bridge of your nose and let it drop. It should land on (or just inside) the ball you're putting. Adjust how far you stand from the ball until it does.",
+        reps: "10 setups, then 20 putts",
+        minutes: 10,
+        youtubeId: "",
+        searchQuery: "putting eyes over the ball drop test",
+      },
+      {
+        name: "Mirror setups",
+        how: "Set up over a putting mirror and move until your eyes are over the line on the mirror, then make putts keeping that setup.",
+        reps: "10 setups, then 20 putts",
+        minutes: 10,
+        youtubeId: "",
+        searchQuery: "putting mirror eye line setup drill",
+      },
+    ],
+    aids: [puttingMirror],
   },
 };

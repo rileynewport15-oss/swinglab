@@ -1,5 +1,5 @@
-import { ANALYSIS_CONFIG, type ShotMode } from "@/config/analysisConfig";
-import { angleDegrees, tiltFromVertical, type AidKind } from "../shapes";
+import { ANALYSIS_CONFIG } from "@/config/analysisConfig";
+import { angleDegrees, tiltFromVertical } from "../shapes";
 import { poseAt } from "../pose/skeleton";
 import {
   LM,
@@ -15,38 +15,22 @@ import {
 } from "../pose/landmarks";
 import type { CameraAngle } from "../pose/autoAids";
 import { CLUB_LEAD, takeawayTime, type KeyMoments } from "./keyMoments";
-import type { IssueKey } from "@/data/improvements";
-
-export type Severity = "minor" | "major";
-
-export type Finding = {
-  id: string;
-  status: "strength" | "improve";
-  severity?: Severity; // only for areas to improve
-  title: string; // short, plain-language headline
-  detail: string; // the numbers behind it
-  meaning: string; // what it means and the ball flight it tends to cause
-  time: number; // where in the video this shows up
-  aid?: AidKind; // which training aid to highlight
-  score: number; // how far past the threshold (for sorting the biggest issue first)
-  issue?: IssueKey; // which drills and training aids fix it (see src/data/improvements.ts)
-};
+import { grade, inches, issue, strength, withIssue, type Finding, type Severity } from "./findings";
 
 type Input = {
   track: PoseTrack;
   moments: KeyMoments;
-  mode: ShotMode;
   angle: CameraAngle;
 };
 
 const CFG = ANALYSIS_CONFIG;
 const DTL = CFG.fullSwing.downTheLine;
 const FO = CFG.fullSwing.faceOn;
-const PUTT = CFG.putt;
 
 /**
- * Turn the pose data into golfer-friendly findings. Only checks that make
- * sense for the shot type and camera angle, and where the body points are
+ * Turn the pose data of a full swing into golfer-friendly findings (putts
+ * have their own checks, see src/lib/putting). Only checks that make
+ * sense for the camera angle, and where the body points are
  * detected confidently, are included. Biggest issues come first.
  */
 export function analyzeSwing(input: Input): Finding[] {
@@ -54,13 +38,9 @@ export function analyzeSwing(input: Input): Finding[] {
   if (!ctx) return [];
 
   const checks: ((c: Context) => Finding | null)[] =
-    input.mode === "putt"
-      ? input.angle === "face-on"
-        ? [tempo, puttHead, puttLowerBody, wristBreakdown, followThrough]
-        : [tempo, puttHead, puttLowerBody]
-      : input.angle === "down-the-line"
-        ? [tempo, posture, takeaway, leadArm, handPath, earlyExtension, hipDepth, headDipLift]
-        : [tempo, hipSway, shoulderTurn, reverseTilt, weightShift, headLateral];
+    input.angle === "down-the-line"
+      ? [tempo, posture, takeaway, leadArm, handPath, earlyExtension, hipDepth, headDipLift]
+      : [tempo, hipSway, shoulderTurn, reverseTilt, weightShift, headLateral];
 
   const findings = checks.map((check) => check(ctx)).filter((f): f is Finding => f !== null);
   const rank = (f: Finding) => (f.status === "strength" ? 2 : f.severity === "major" ? 0 : 1);
@@ -127,66 +107,25 @@ function makeContext(input: Input): Context | null {
 
 const hipsMid = (c: Context, lms: Landmark[]) => mid(c.P(lms, LM.leftHip), c.P(lms, LM.rightHip));
 const shouldersMid = (c: Context, lms: Landmark[]) => mid(c.P(lms, LM.leftShoulder), c.P(lms, LM.rightShoulder));
-const feetMid = (c: Context, lms: Landmark[]) => mid(c.P(lms, LM.leftAnkle), c.P(lms, LM.rightAnkle));
-const FEET = [LM.leftAnkle, LM.rightAnkle];
-// A point measured from the feet. In a putt the feet don't move, so this
-// cancels out a hand-held camera drifting during the stroke (checked on real
-// putts: the whole skeleton, feet included, drifted ~1–3 in).
-const fromFeet = (c: Context, lms: Landmark[], p: Px): Px => {
-  const feet = feetMid(c, lms);
-  return { x: p.x - feet.x, y: p.y - feet.y };
-};
 const spineTilt = (c: Context, lms: Landmark[]) => tiltFromVertical(hipsMid(c, lms), shouldersMid(c, lms));
 const TORSO = [LM.leftShoulder, LM.rightShoulder, LM.leftHip, LM.rightHip];
 const HEAD = [LM.nose, LM.leftEar, LM.rightEar];
 const HANDS = [LM.leftWrist, LM.rightWrist, LM.leftIndex, LM.rightIndex];
 
-/** Grade a "bigger is worse" value: null = fine, else the severity. */
-function grade(value: number, limits: { minor: number; major: number }): Severity | null {
-  if (value > limits.major) return "major";
-  if (value > limits.minor) return "minor";
-  return null;
-}
-
-function strength(id: string, title: string, detail: string, meaning: string, time: number, aid?: AidKind): Finding {
-  return { id, status: "strength", title, detail, meaning, time, aid, score: 0 };
-}
-
-/** Tag an area to improve with the issue it is, so we can suggest drills. */
-function withIssue(issue: IssueKey, finding: Finding): Finding {
-  return { ...finding, issue };
-}
-
-function issue(
-  id: string,
-  severity: Severity,
-  score: number,
-  title: string,
-  detail: string,
-  meaning: string,
-  time: number,
-  aid?: AidKind,
-): Finding {
-  return { id, status: "improve", severity, title, detail, meaning, time, aid, score };
-}
-
-// ---------- Tempo (both modes) ----------
+// ---------- Tempo ----------
 
 function tempo(c: Context): Finding | null {
-  const { track, moments, mode } = c;
+  const { track, moments } = c;
   // The backswing starts when the club starts moving: a moment before the
   // hands do (but never before the address marker).
-  const takeaway = takeawayTime(track, moments) - CLUB_LEAD[mode];
+  const takeaway = takeawayTime(track, moments) - CLUB_LEAD;
   const back = moments.top - Math.max(takeaway, moments.address);
   const down = moments.impact - moments.top;
   if (back <= 0 || down <= 0) return null;
 
   const ratio = back / down;
-  const t = CFG.tempo[mode];
-  const putt = mode === "putt";
-  const backName = putt ? "backstroke" : "backswing";
-  const downName = putt ? "forward stroke" : "downswing";
-  const detail = `${cap(backName)} ${back.toFixed(2)}s, ${downName} ${down.toFixed(2)}s. Ideal is about ${t.ideal} to 1.`;
+  const t = CFG.fullSwing.tempo;
+  const detail = `Backswing ${back.toFixed(2)}s, downswing ${down.toFixed(2)}s. Ideal is about ${t.ideal} to 1.`;
   const r = ratio.toFixed(1);
 
   if (ratio >= t.goodMin && ratio <= t.goodMax) {
@@ -194,36 +133,30 @@ function tempo(c: Context): Finding | null {
       "tempo",
       `Smooth tempo: ${r} to 1`,
       detail,
-      putt
-        ? "A steady 2-to-1 rhythm makes your distance control much more consistent."
-        : "Good rhythm lets your body and arms work in sequence, for solid contact and more consistent distance.",
+      "Good rhythm lets your body and arms work in sequence, for solid contact and more consistent distance.",
       moments.top,
     );
   }
   const severity: Severity = ratio < t.okMin || ratio > t.okMax ? "major" : "minor";
   const score = ratio < t.goodMin ? t.goodMin / ratio : ratio / t.goodMax;
   if (ratio < t.goodMin) {
-    return withIssue(putt ? "putt-tempo" : "tempo-rushed", issue(
+    return withIssue("tempo-rushed", issue(
       "tempo",
       severity,
       score,
-      `Your ${backName} is rushed (${r} to 1)`,
+      `Your backswing is rushed (${r} to 1)`,
       detail,
-      putt
-        ? "A quick, jabby backstroke makes it hard to control speed, so putts often finish well short or long."
-        : "A rushed backswing lets your arms outrace your body. That often leads to an over-the-top move (pulls and slices) and inconsistent contact. Take it back a little slower.",
+      "A rushed backswing lets your arms outrace your body. That often leads to an over-the-top move (pulls and slices) and inconsistent contact. Take it back a little slower.",
       moments.top,
     ));
   }
-  return withIssue(putt ? "putt-tempo" : "tempo-slow", issue(
+  return withIssue("tempo-slow", issue(
     "tempo",
     severity,
     score,
-    `Your ${downName} is slow compared to your ${backName} (${r} to 1)`,
+    `Your downswing is slow compared to your backswing (${r} to 1)`,
     detail,
-    putt
-      ? "A slow forward stroke usually means you're decelerating, which leaves putts short and pulled or pushed."
-      : "A slow, guided downswing costs clubhead speed and often leaves the face open: pushes, slices and lost distance. Let the club speed up through the ball.",
+    "A slow, guided downswing costs clubhead speed and often leaves the face open: pushes, slices and lost distance. Let the club speed up through the ball.",
     moments.top,
   ));
 }
@@ -709,155 +642,4 @@ function turnAngle(c: Context, from: Landmark[], to: Landmark[], a: number, b: n
   if (lengths === 0) return null;
   const cos = Math.max(-1, Math.min(1, (p.x * q.x + p.z * q.z) / lengths));
   return (Math.acos(cos) * 180) / Math.PI;
-}
-
-// ---------- Putting ----------
-
-function puttHead(c: Context): Finding | null {
-  const { track, moments, address, impact, pxPerInch } = c;
-  if (!c.confident([address, impact], [...HEAD, ...FEET])) return null;
-  const head = (lms: Landmark[]) => fromFeet(c, lms, headCenter(lms, track));
-  const moved = distance(head(address), head(impact)) / pxPerInch;
-  const detail = `Your head moved ${inches(moved)} from address to impact.`;
-  const g = grade(moved, PUTT.headMovementInches);
-  if (g) {
-    return withIssue("putt-stillness", issue(
-      "head",
-      g,
-      moved / PUTT.headMovementInches.minor,
-      `Your head moved ${inches(moved)} during the stroke`,
-      detail,
-      "Moving your head shifts your shoulders and the putter face, which often leads to pulled or pushed putts. Keep your eyes over the ball until it's gone.",
-      moments.impact,
-      "head",
-    ));
-  }
-  return strength("head", "Your head stayed still", detail, "A still head keeps the putter face square and your contact centered.", moments.impact, "head");
-}
-
-function puttLowerBody(c: Context): Finding | null {
-  const { moments, address, impact, pxPerInch } = c;
-  if (!c.confident([address, impact], [LM.leftHip, LM.rightHip, LM.leftKnee, LM.rightKnee, ...FEET])) return null;
-  const anchor = (lms: Landmark[]) =>
-    fromFeet(c, lms, mid(hipsMid(c, lms), mid(c.P(lms, LM.leftKnee), c.P(lms, LM.rightKnee))));
-  const start = anchor(address);
-  let worst = { move: 0, time: moments.impact };
-  for (const f of c.between(moments.address, moments.impact)) {
-    const move = distance(anchor(f.lms), start) / pxPerInch;
-    if (move > worst.move) worst = { move, time: f.time };
-  }
-  const detail = `Your hips and knees moved up to ${inches(worst.move)} during the stroke.`;
-  const g = grade(worst.move, PUTT.lowerBodyMovementInches);
-  if (g) {
-    return withIssue("putt-stillness", issue(
-      "lower-body",
-      g,
-      worst.move / PUTT.lowerBodyMovementInches.minor,
-      `Your lower body moved ${inches(worst.move)} during the stroke`,
-      detail,
-      "Lower-body movement sways the putter off line and changes your contact, which hurts distance control. Keep your legs quiet and rock your shoulders.",
-      worst.time,
-      "spine",
-    ));
-  }
-  return strength(
-    "lower-body",
-    "Your lower body stayed quiet",
-    detail,
-    "A quiet lower body gives you a stable base for a repeatable stroke.",
-    worst.time,
-    "spine",
-  );
-}
-
-const WRIST_SMOOTHING = 0.1; // seconds either side
-
-function median(values: number[]): number {
-  const sorted = [...values].sort((a, b) => a - b);
-  return sorted[Math.floor(sorted.length / 2)] ?? 0;
-}
-
-function wristBreakdown(c: Context): Finding | null {
-  const { moments, address, impact, lead } = c;
-  if (!c.confident([address, impact], [lead.elbow, lead.wrist, lead.index])) return null;
-  const wrist = (lms: Landmark[]) => angleDegrees(c.P(lms, lead.elbow), c.P(lms, lead.wrist), c.P(lms, lead.index));
-  // The finger points on a putter grip jump around from frame to frame (raw
-  // readings swung 25–45° on putts with steady wrists), so use the median
-  // angle over a short window. A real breakdown lasts much longer than that.
-  const smoothed = (time: number) =>
-    median(c.between(time - WRIST_SMOOTHING, time + WRIST_SMOOTHING).map((f) => wrist(f.lms)));
-  const start = smoothed(moments.address);
-  let worst = { change: 0, time: moments.impact };
-  for (const f of c.between(moments.address, moments.impact + 0.3)) {
-    const change = Math.abs(smoothed(f.time) - start);
-    if (change > worst.change) worst = { change, time: f.time };
-  }
-  const detail = `Your lead wrist angle changed by up to ${Math.round(worst.change)}° during the stroke.`;
-  const g = grade(worst.change, PUTT.wristBreakdownDegrees);
-  if (g) {
-    return withIssue("wrist-breakdown", issue(
-      "wrists",
-      g,
-      worst.change / PUTT.wristBreakdownDegrees.minor,
-      "Your wrists break down during the stroke",
-      detail,
-      "When the wrists hinge, the putter face and loft change, which often leads to pulls, pushes and poor distance control. Let your shoulders rock the putter.",
-      worst.time,
-    ));
-  }
-  return strength(
-    "wrists",
-    "Shoulder-driven stroke: your wrists stayed quiet",
-    detail,
-    "Rocking the shoulders with quiet wrists keeps the face square and your speed consistent.",
-    worst.time,
-  );
-}
-
-function followThrough(c: Context): Finding | null {
-  const { track, moments, address, top, pxPerInch, targetSide } = c;
-  if (!c.confident([address, top], HANDS)) return null;
-  const start = handsPosition(address, track);
-  const back = distance(handsPosition(top, track), start) / pxPerInch;
-  if (back <= 0.2) return null;
-  // Furthest the hands travel toward the target after impact.
-  let through = { length: 0, time: moments.impact };
-  for (const f of c.between(moments.impact, moments.impact + 1)) {
-    const length = ((handsPosition(f.lms, track).x - start.x) * targetSide) / pxPerInch;
-    if (length > through.length) through = { length, time: f.time };
-  }
-  const ratio = through.length / back;
-  const detail = `Backstroke ${inches(back)}, follow-through ${inches(through.length)} (${Math.round(ratio * 100)}% as long).`;
-  const t = PUTT.followThroughRatio;
-  if (ratio < t.minor) {
-    return withIssue("putt-length", issue(
-      "follow-through",
-      ratio < t.major ? "major" : "minor",
-      t.minor / Math.max(ratio, 0.1),
-      "Your follow-through is shorter than your backstroke",
-      detail,
-      "A long backstroke with a short follow-through means you're slowing down through the ball. That often leaves putts short and pulled or pushed.",
-      through.time,
-    ));
-  }
-  return strength(
-    "follow-through",
-    "Your follow-through matched your backstroke",
-    detail,
-    "An equal or longer follow-through is a sign of a smooth, accelerating stroke.",
-    through.time,
-  );
-}
-
-// ---------- Wording helpers ----------
-
-/** "less than an inch", "about 1 inch", "about 2.5 inches" */
-function inches(value: number) {
-  if (value < 1) return "less than an inch";
-  const rounded = Math.round(value * 2) / 2;
-  return `about ${rounded} ${rounded === 1 ? "inch" : "inches"}`;
-}
-
-function cap(s: string) {
-  return s[0].toUpperCase() + s.slice(1);
 }

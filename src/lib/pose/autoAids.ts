@@ -14,9 +14,15 @@ import {
 
 export type CameraAngle = "face-on" | "down-the-line";
 
-export const CAMERA_ANGLES: { id: CameraAngle; label: string; aids: string }[] = [
-  { id: "face-on", label: "Face On", aids: "Head, spine, stance line, hip lines" },
-  { id: "down-the-line", label: "Down the Line", aids: "Head, spine, swing plane" },
+// `aids` / `puttAids`: what each camera angle gets, for full swings and putts.
+export const CAMERA_ANGLES: { id: CameraAngle; label: string; aids: string; puttAids: string }[] = [
+  {
+    id: "face-on",
+    label: "Face On",
+    aids: "Head, spine, stance line, hip lines",
+    puttAids: "Head, lower body, shoulders, pendulum, stroke length, hand path",
+  },
+  { id: "down-the-line", label: "Down the Line", aids: "Head, spine, swing plane", puttAids: "Head, lower body, hand path, eye line" },
 ];
 
 const COLORS = {

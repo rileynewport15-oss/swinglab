@@ -14,13 +14,16 @@ type Props = {
   markers?: Marker[];
   // Returns where the marker actually ended up (markers keep their order).
   onMarkerMove?: (id: string, time: number, done: boolean) => number | undefined;
-  addressTime?: number | null; // shows a "Go to address" button when set
-  onGoToAddress?: () => void;
+  // "Go to" buttons for key moments (full swing: address; putts: each
+  // moment of the stroke). Jumping pauses the video there.
+  jumps?: Jump[];
 };
+
+export type Jump = { id: string; label: string; time: number };
 
 // Play/pause, scrubber, speed and frame-step controls for the <video> above it.
 // The video element itself lives in VideoAnalyzer so the drawing canvas can sit on top.
-export default function PlayerControls({ videoRef, markers, onMarkerMove, addressTime, onGoToAddress }: Props) {
+export default function PlayerControls({ videoRef, markers, onMarkerMove, jumps = [] }: Props) {
   const [playing, setPlaying] = useState(false);
   const [time, setTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -95,6 +98,11 @@ export default function PlayerControls({ videoRef, markers, onMarkerMove, addres
     seek(video.currentTime + direction * FRAME_STEP);
   }
 
+  function jumpTo(t: number) {
+    videoRef.current?.pause();
+    seek(t);
+  }
+
   function changeSpeed(s: number) {
     if (videoRef.current) videoRef.current.playbackRate = s;
     setSpeed(s);
@@ -146,7 +154,7 @@ export default function PlayerControls({ videoRef, markers, onMarkerMove, addres
         />
       )}
 
-      {/* Frame back, play/pause, frame forward, go to address */}
+      {/* Frame back, play/pause, frame forward (and go to address) */}
       <div className="flex items-center justify-center gap-2">
         <ControlButton label="Back one frame" onClick={() => stepFrame(-1)}>
           ⏮︎ <span className="text-xs">Frame</span>
@@ -161,15 +169,34 @@ export default function PlayerControls({ videoRef, markers, onMarkerMove, addres
         <ControlButton label="Forward one frame" onClick={() => stepFrame(1)}>
           <span className="text-xs">Frame</span> ⏭︎
         </ControlButton>
-        {addressTime != null && onGoToAddress && (
-          <ControlButton label={`Go to address (${addressTime.toFixed(2)}s)`} onClick={onGoToAddress}>
+        {jumps.length === 1 && (
+          <ControlButton label={`Go to ${jumps[0].label} (${jumps[0].time.toFixed(2)}s)`} onClick={() => jumpTo(jumps[0].time)}>
             <span className="flex flex-col items-center leading-tight">
               <span className="text-xs">Go to</span>
-              <span className="text-xs">address</span>
+              <span className="text-xs">{jumps[0].label}</span>
             </span>
           </ControlButton>
         )}
       </div>
+
+      {/* Several moments (putts): a row of "Go to" buttons */}
+      {jumps.length > 1 && (
+        <div className="flex flex-col gap-1.5" role="group" aria-label="Go to a moment">
+          <span className="text-xs font-semibold text-fairway-700">Go to</span>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {jumps.map((j) => (
+              <button
+                key={j.id}
+                onClick={() => jumpTo(j.time)}
+                aria-label={`Go to ${j.label} (${j.time.toFixed(2)}s)`}
+                className="min-h-11 rounded-xl bg-fairway-50 px-2 text-xs font-semibold leading-tight text-fairway-800 hover:bg-fairway-100 active:bg-fairway-100"
+              >
+                {j.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Speed */}
       <div className="grid grid-cols-4 gap-2" role="group" aria-label="Playback speed">

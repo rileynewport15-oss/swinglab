@@ -12,7 +12,22 @@ export type Rect = { x: number; y: number; w: number; h: number };
 export type ShapeKind = "line" | "freehand" | "circle" | "box" | "angle";
 
 // Which automatic training aid a shape is (used to highlight it from results).
-export type AidKind = "head" | "spine" | "stance" | "hips" | "plane";
+// Full swing: head, spine, stance, hips, plane. Putting: the rest (shoulders,
+// triangle and handPath move with the golfer, so they're drawn by PuttOverlay
+// rather than stored as shapes).
+export type AidKind =
+  | "head"
+  | "spine"
+  | "stance"
+  | "hips"
+  | "plane"
+  | "puttHead"
+  | "lowerBody"
+  | "shoulders"
+  | "triangle"
+  | "strokeLength"
+  | "handPath"
+  | "eyeLine";
 
 export type Shape = {
   id: string;
@@ -366,7 +381,7 @@ function dot(ctx: CanvasRenderingContext2D, p: Point, r: number) {
 }
 
 // Small dark pill with white text, readable on any background.
-function pill(ctx: CanvasRenderingContext2D, text: string, r: Rect, color: string, bold = false) {
+export function pill(ctx: CanvasRenderingContext2D, text: string, r: Rect, color: string, bold = false) {
   ctx.save();
   ctx.shadowBlur = 0;
   ctx.font = LABEL_FONT;

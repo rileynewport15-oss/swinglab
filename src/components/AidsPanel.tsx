@@ -1,28 +1,25 @@
 "use client";
 
-import {
-  AIDS_FOR_ANGLE,
-  AID_COLORS,
-  AID_NAMES,
-  TIMING_NAMES,
-  type AidKey,
-  type AidSettings,
-  type AidTiming,
-} from "@/lib/aidVisibility";
+import { AIDS_FOR, AID_COLORS, AID_NAMES, TIMINGS, type AidKey, type AidSettings, type AidTiming } from "@/lib/aidVisibility";
 import type { CameraAngle } from "@/lib/pose/autoAids";
+import type { ShotMode } from "@/config/analysisConfig";
 
 type Props = {
   settings: AidSettings;
   // Takes an update function so quick repeated taps always build on the latest settings.
   onChange: (update: (prev: AidSettings) => AidSettings) => void;
+  mode: ShotMode;
   cameraAngle: CameraAngle;
   skeletonAvailable: boolean; // only once pose analysis has finished
-  timingAvailable: boolean; // only when Address/Top/Impact were found
+  timingAvailable: boolean; // only when the key moments were found
 };
 
 // Card in the right column: which training aids show on the video, and when.
-export default function AidsPanel({ settings, onChange, cameraAngle, skeletonAvailable, timingAvailable }: Props) {
-  const aids = AIDS_FOR_ANGLE[cameraAngle].filter((a) => a !== "skeleton" || skeletonAvailable);
+export default function AidsPanel({ settings, onChange, mode, cameraAngle, skeletonAvailable, timingAvailable }: Props) {
+  const aids = AIDS_FOR[mode][cameraAngle].filter((a) => a !== "skeleton" || skeletonAvailable);
+  const timings = TIMINGS[mode];
+  const markerNames = mode === "putt" ? "S / B / I / F" : "A / T / I";
+  const momentNames = mode === "putt" ? "the moments of the stroke are" : "Address, Top and Impact are";
 
   const setAll = (on: boolean) =>
     onChange((prev) => ({ ...prev, visible: { ...prev.visible, ...Object.fromEntries(aids.map((a) => [a, on])) } }));
@@ -37,8 +34,8 @@ export default function AidsPanel({ settings, onChange, cameraAngle, skeletonAva
         <h2 className="font-bold text-fairway-900">Training aids</h2>
         <p className="text-xs text-fairway-700">
           {timingAvailable
-            ? "Choose which aids show and when, using the A / T / I markers."
-            : "Choose which aids show. Timing options work once Address, Top and Impact are found."}
+            ? `Choose which aids show and when, using the ${markerNames} markers.`
+            : `Choose which aids show. Timing options work once ${momentNames} found.`}
         </p>
       </div>
 
@@ -76,14 +73,15 @@ export default function AidsPanel({ settings, onChange, cameraAngle, skeletonAva
             <span className="min-w-0 flex-1 text-sm font-semibold leading-tight text-fairway-900">{AID_NAMES[aid]}</span>
             <select
               aria-label={`When to show the ${AID_NAMES[aid].toLowerCase()}`}
-              value={settings.timing[aid]}
+              // A timing saved from the other mode shows as the whole video.
+              value={timings.some((t) => t.id === settings.timing[aid]) ? settings.timing[aid] : "whole"}
               disabled={!settings.visible[aid] || !timingAvailable}
               onChange={(e) => setTiming(aid, e.target.value as AidTiming)}
               className="min-h-9 w-28 shrink-0 rounded-lg sm:w-32 border border-fairway-200 bg-white px-1.5 text-xs text-fairway-900 disabled:opacity-40"
             >
-              {(Object.keys(TIMING_NAMES) as AidTiming[]).map((t) => (
-                <option key={t} value={t}>
-                  {TIMING_NAMES[t]}
+              {timings.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
                 </option>
               ))}
             </select>

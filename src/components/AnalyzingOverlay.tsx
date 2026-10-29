@@ -1,8 +1,10 @@
 "use client";
 
 import { CAMERA_ANGLES, type CameraAngle } from "@/lib/pose/autoAids";
+import type { ShotMode } from "@/config/analysisConfig";
 
 type Props = {
+  mode: ShotMode;
   progress: number; // 0–1
   askAngle: boolean; // only the first time
   cameraAngle: CameraAngle;
@@ -11,13 +13,13 @@ type Props = {
 
 // Covers the video while pose detection runs. The first time, it also asks
 // for the camera angle so the user answers while they wait.
-export default function AnalyzingOverlay({ progress, askAngle, cameraAngle, onChooseAngle }: Props) {
+export default function AnalyzingOverlay({ mode, progress, askAngle, cameraAngle, onChooseAngle }: Props) {
   const percent = Math.round(progress * 100);
   return (
     <div className="absolute inset-0 flex flex-col items-center justify-center gap-5 bg-fairway-900/75 p-4 text-center text-white backdrop-blur-sm">
       <div className="w-full max-w-60">
         <p className="font-semibold" role="status">
-          {progress === 0 ? "Loading pose detection…" : `Analyzing your swing… ${percent}%`}
+          {progress === 0 ? "Loading pose detection…" : `Analyzing your ${mode === "putt" ? "putt" : "swing"}… ${percent}%`}
         </p>
         <div className="mt-2 h-2 overflow-hidden rounded-full bg-white/20">
           <div className="h-full rounded-full bg-fairway-200 transition-[width]" style={{ width: `${percent}%` }} />
@@ -41,7 +43,7 @@ export default function AnalyzingOverlay({ progress, askAngle, cameraAngle, onCh
               >
                 <span className="font-semibold">{a.label}</span>
                 <span className={`block text-xs ${cameraAngle === a.id ? "text-white/80" : "text-fairway-700"}`}>
-                  {a.aids}
+                  {mode === "putt" ? a.puttAids : a.aids}
                 </span>
               </button>
             ))}

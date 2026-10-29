@@ -13,6 +13,7 @@ import {
   type Size,
 } from "@/lib/shapes";
 import { layoutLabels } from "@/lib/labels";
+import { ALL_AID_KINDS } from "@/lib/aidVisibility";
 import type { DrawingApi } from "@/hooks/useDrawing";
 
 // What the pointer is currently doing. Kept in a ref (not state) because it
@@ -36,8 +37,6 @@ type Props = {
   aidShownAt: (aid: AidKind, time: number) => boolean;
   showLabels: boolean;
 };
-
-const ALL_AIDS: AidKind[] = ["head", "spine", "stance", "hips", "plane"];
 
 // Transparent canvas laid exactly over the video, plus the on-video buttons
 // (placement instructions and delete). Drawings are redrawn whenever they
@@ -81,7 +80,7 @@ export default function DrawingCanvas({ drawing, highlightAid = null, videoRef, 
 
   // Which aids are on screen right now, worked out on every render so that
   // switching an aid off (or closing a result) hides it immediately.
-  const shownAids = ALL_AIDS.filter((a) => aidShownAt(a, time)).join();
+  const shownAids = ALL_AID_KINDS.filter((a) => aidShownAt(a, time)).join();
 
   // Shapes on screen now: everything the user drew, plus the aids that are switched on.
   const visibleShapes = useMemo(() => {
