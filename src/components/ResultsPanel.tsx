@@ -13,13 +13,14 @@ type Props = {
   activeId: string | null; // the expanded result
   onSelect: (finding: Finding | null) => void; // open a result, or close it (null)
   mode: ShotMode;
+  noSwingHint?: string; // shown instead of the generic message when no stroke is found
 };
 
 // "Areas to improve" and "Strengths" as collapsible sections. Each result shows
 // just its badge and title; clicking it opens the details, jumps the video to
 // that moment and highlights the matching aid. On computers the card fits the
 // screen and scrolls inside itself.
-export default function ResultsPanel({ findings, swingFound, activeId, onSelect, mode }: Props) {
+export default function ResultsPanel({ findings, swingFound, activeId, onSelect, mode, noSwingHint }: Props) {
   const [open, setOpen] = useState({ improve: true, strengths: false });
   const [showPlan, setShowPlan] = useState(false);
   const improve = findings.filter((f) => f.status === "improve");
@@ -32,7 +33,8 @@ export default function ResultsPanel({ findings, swingFound, activeId, onSelect,
         <p className="text-xs text-fairway-700">
           {swingFound
             ? "Biggest issues first. Click a result for details and to see it on the video."
-            : "We couldn't spot a full swing in this clip, so there are no results yet. Make sure the whole swing is in the video, or drag the A / T / I markers on the scrubber."}
+            : (noSwingHint ??
+              "We couldn't spot a full swing in this clip, so there are no results yet. Make sure the whole swing is in the video, or drag the A / T / I markers on the scrubber.")}
         </p>
         {swingFound && (
           <button

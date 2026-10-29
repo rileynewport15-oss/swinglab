@@ -1,4 +1,4 @@
-import { LM, distance, px, torsoLength, type Landmark, type PoseTrack } from "./landmarks";
+import { LM, distance, handsPosition, px, torsoLength, type Landmark, type PoseTrack } from "./landmarks";
 
 // Speeds are measured in "torso lengths per second", so the same thresholds
 // work whether the golfer is close to the camera or far away.
@@ -6,6 +6,16 @@ const STILL_SPEED = 0.35; // below this, the golfer counts as still
 const SWING_SPEED = 2.0; // hands faster than this = the swing has started
 const SPEED_WINDOW = 0.25; // seconds; comparing frames this far apart smooths out jitter
 const MIN_STILL_SECONDS = 0.3;
+// A stroke: the hands move at least MIN_STROKE torso lengths away from address
+// and come back within RETURN_SHARE of that distance, within RETURN_WITHIN seconds.
+const MIN_STROKE = 0.12;
+const RETURN_SHARE = 0.6;
+const RETURN_WITHIN = 4;
+// Hands within this many torso lengths of their resting spot count as at rest.
+const SETTLED_HANDS = 0.06;
+// The resting spot is measured over the end of the still stretch only, because
+// a long stretch also includes the golfer setting up before address.
+const REST_WINDOW = 1.0;
 
 const BODY_POINTS = [
   LM.nose,
@@ -39,14 +49,42 @@ export function findAddress(track: PoseTrack): AddressFrame | null {
     return moved / ruler / (frames[i].time - frames[i - lag].time);
   };
 
-  // 1. When does the swing start? The first time the hands move fast.
+  // 1. When does the swing start? The first time the hands move fast after
+  //    the golfer has been still at least once (a glitchy first frame can
+  //    make the hands look like they jumped).
   let swingStart = frames.length;
+  let wasStill = false;
   for (let i = lag; i < frames.length; i++) {
+    const body = speed(i, BODY_POINTS);
+    if (body !== null && body < STILL_SPEED) wasStill = true;
     const s = speed(i, HAND_POINTS);
-    if (s !== null && s > SWING_SPEED) {
+    if (wasStill && s !== null && s > SWING_SPEED) {
       swingStart = i;
       break;
     }
+  }
+
+  // Where the hands rest at the end of a still stretch: their median position,
+  // so a slow drift or the start of a slow backstroke doesn't count.
+  function restingHands(r: { start: number; end: number }) {
+    const from = frames[r.end].time - REST_WINDOW;
+    const pts = frames
+      .slice(r.start, r.end + 1)
+      .filter((f) => f.time >= from).flatMap((f) => (f.landmarks ? [handsPosition(f.landmarks, track)] : []));
+    const median = (v: number[]) => [...v].sort((a, b) => a - b)[Math.floor(v.length / 2)];
+    const ruler = torsoLength(frames[r.start].landmarks!, track) || 1;
+    return { hands: { x: median(pts.map((p) => p.x)), y: median(pts.map((p) => p.y)) }, ruler };
+  }
+
+  // The last frame of a still stretch where the hands are still at rest (a
+  // slow putting backstroke can look "still" and stretch past address).
+  function settledEnd(r: { start: number; end: number }) {
+    const { hands, ruler } = restingHands(r);
+    for (let i = r.end; i > r.start; i--) {
+      const lms = frames[i].landmarks;
+      if (lms && distance(handsPosition(lms, track), hands) / ruler <= SETTLED_HANDS) return i;
+    }
+    return r.end;
   }
 
   // 2. Find stretches where the whole body is still, before the swing.
@@ -65,10 +103,25 @@ export function findAddress(track: PoseTrack): AddressFrame | null {
     (r) => frames[r.end].time - frames[r.start].time + track.step * lag >= MIN_STILL_SECONDS,
   );
 
-  // 3. Address = the end of the last still stretch before the swing (the frame
-  //    right before the takeaway). With no swing found, use the first stretch.
-  const run = swingStart < frames.length ? longEnough.at(-1) : longEnough[0];
-  if (run) return pick(track, run.end);
+  // 3. Address = the end of the last still stretch that is followed by a
+  //    there-and-back stroke: the hands move away from where they rested and
+  //    then come back near it (impact). This skips other pauses, like the top
+  //    of a slow putting backstroke, after which the hands never come back.
+  //    Measured from where the hands rested at the end of the stretch.
+  const isAddress = (r: { start: number; end: number }) => {
+    const { hands: homeHands, ruler } = restingHands(r);
+    let peak = 0;
+    for (let i = r.end + 1; i < frames.length && frames[i].time <= frames[r.end].time + RETURN_WITHIN; i++) {
+      const lms = frames[i].landmarks;
+      if (!lms) continue;
+      const d = distance(handsPosition(lms, track), homeHands) / ruler;
+      peak = Math.max(peak, d);
+      if (peak >= MIN_STROKE && d < peak * RETURN_SHARE) return true;
+    }
+    return false;
+  };
+  const run = [...longEnough].reverse().find(isAddress) ?? (swingStart < frames.length ? longEnough.at(-1) : longEnough[0]);
+  if (run) return pick(track, settledEnd(run));
 
   // No clear still stretch: fall back to the calmest frame with a golfer in it.
   let best: { index: number; s: number } | null = null;

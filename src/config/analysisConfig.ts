@@ -58,9 +58,14 @@ export const ANALYSIS_CONFIG = {
     },
     faceOn: {
       // Trail hip drifting away from the target in the backswing, inches.
-      hipSwayInches: { minor: 1.5, major: 3 } as Limits,
-      // Head sliding toward the target by impact, inches.
-      headSlideTowardTargetInches: { minor: 2, major: 4 } as Limits,
+      // Checked on real swings: the hip landmark reads ~1 in more than the
+      // visible hip edge (the pelvis turning moves it), so this allows for that
+      // (real ~2 in reads as ~3 in).
+      hipSwayInches: { minor: 3, major: 4.5 } as Limits,
+      // Head sliding toward the target by impact, inches. From the front, the
+      // head landmarks move ~1–2 in when the head simply rotates to look through
+      // the shot (checked frame by frame), so small readings aren't flagged.
+      headSlideTowardTargetInches: { minor: 3, major: 5 } as Limits,
       // Head drifting away from the target by impact, inches (a little is normal).
       headDriftAwayInches: { minor: 3, major: 5 } as Limits,
       // Weight shift: hips should move toward the target by impact, inches.
@@ -75,9 +80,11 @@ export const ANALYSIS_CONFIG = {
   },
 
   putt: {
-    // Head movement from address to impact, inches.
-    headMovementInches: { minor: 0.75, major: 1.5 } as Limits,
-    // Hips and knees movement during the stroke, inches.
+    // Head movement from address to impact (measured from the feet), inches.
+    // The ear landmarks wobble ~0.5–1 in on still heads (checked frame by
+    // frame on real putts), so smaller limits flag steady heads.
+    headMovementInches: { minor: 1.5, major: 2.5 } as Limits,
+    // Hips and knees movement during the stroke (measured from the feet), inches.
     lowerBodyMovementInches: { minor: 1, major: 2 } as Limits,
     // Face On: change in the lead wrist angle during the stroke, degrees.
     wristBreakdownDegrees: { minor: 10, major: 20 } as Limits,

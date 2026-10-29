@@ -47,7 +47,8 @@ export function poseAt(track: PoseTrack, time: number): Landmark[] | null {
   const t = Math.min(1, (time - a.time) / (b.time - a.time));
   return a.landmarks.map((p, k) => {
     const q = b.landmarks![k];
-    return { x: p.x + (q.x - p.x) * t, y: p.y + (q.y - p.y) * t, visibility: Math.min(p.visibility, q.visibility) };
+    const z = p.z !== undefined && q.z !== undefined ? p.z + (q.z - p.z) * t : undefined;
+    return { x: p.x + (q.x - p.x) * t, y: p.y + (q.y - p.y) * t, z, visibility: Math.min(p.visibility, q.visibility) };
   });
 }
 

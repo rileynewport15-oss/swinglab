@@ -27,7 +27,9 @@ export const LM = {
 
 // x and y are fractions of the video frame (0–1), the same "video coordinates"
 // our drawings use, so landmarks can be turned into shapes directly.
-export type Landmark = { x: number; y: number; visibility: number };
+// z is MediaPipe's depth estimate (toward/away from the camera), on roughly
+// the same scale as x; smaller = closer to the camera. Used for turn angles.
+export type Landmark = { x: number; y: number; z?: number; visibility: number };
 
 export type PoseFrame = { time: number; landmarks: Landmark[] | null };
 

@@ -80,7 +80,7 @@ export default function VideoAnalyzer({ videoUrl, mode, onChangeVideo }: Props) 
   }
 
   // When analysis finishes: place the aids, mark the key moments, show the address frame.
-  const analysis = usePoseAnalysis(videoUrl, (track, address, found) => {
+  const analysis = usePoseAnalysis(videoUrl, mode, (track, address, found) => {
     placeAids(track, address.landmarks, cameraAngle, address.time);
     setMoments(found ?? { address: address.time, top: NaN, impact: NaN });
     jumpTo(address.time);
@@ -266,6 +266,11 @@ export default function VideoAnalyzer({ videoUrl, mode, onChangeVideo }: Props) 
             activeId={activeFinding}
             onSelect={selectFinding}
             mode={mode}
+            noSwingHint={
+              mode === "putt" && cameraAngle === "down-the-line"
+                ? "We couldn't measure this putt. From down the line the putter moves toward and away from the camera, so the stroke barely shows on video. Film putts Face On (camera in front of you, at hip height) to get stroke results."
+                : undefined
+            }
           />
         </div>
       )}

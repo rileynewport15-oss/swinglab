@@ -53,7 +53,7 @@ export async function analyzeVideo(
       const pose = result.landmarks[0];
       frames.push({
         time: video.currentTime,
-        landmarks: pose ? pose.map(({ x, y, visibility }) => ({ x, y, visibility })) : null,
+        landmarks: pose ? pose.map(({ x, y, z, visibility }) => ({ x, y, z, visibility })) : null,
       });
       onProgress?.(Math.min(1, (t - start + step) / length));
     }

@@ -127,6 +127,15 @@ function makeContext(input: Input): Context | null {
 
 const hipsMid = (c: Context, lms: Landmark[]) => mid(c.P(lms, LM.leftHip), c.P(lms, LM.rightHip));
 const shouldersMid = (c: Context, lms: Landmark[]) => mid(c.P(lms, LM.leftShoulder), c.P(lms, LM.rightShoulder));
+const feetMid = (c: Context, lms: Landmark[]) => mid(c.P(lms, LM.leftAnkle), c.P(lms, LM.rightAnkle));
+const FEET = [LM.leftAnkle, LM.rightAnkle];
+// A point measured from the feet. In a putt the feet don't move, so this
+// cancels out a hand-held camera drifting during the stroke (checked on real
+// putts: the whole skeleton, feet included, drifted ~1–3 in).
+const fromFeet = (c: Context, lms: Landmark[], p: Px): Px => {
+  const feet = feetMid(c, lms);
+  return { x: p.x - feet.x, y: p.y - feet.y };
+};
 const spineTilt = (c: Context, lms: Landmark[]) => tiltFromVertical(hipsMid(c, lms), shouldersMid(c, lms));
 const TORSO = [LM.leftShoulder, LM.rightShoulder, LM.leftHip, LM.rightHip];
 const HEAD = [LM.nose, LM.leftEar, LM.rightEar];
@@ -655,14 +664,9 @@ function reverseTilt(c: Context): Finding | null {
 function shoulderTurn(c: Context): Finding | null {
   const { address, top, moments } = c;
   if (!c.confident([address, top], [LM.leftShoulder, LM.rightShoulder])) return null;
-  // Face on, the shoulders look narrower as they turn away from the camera.
-  const width = (lms: Landmark[]) => distance(c.P(lms, LM.leftShoulder), c.P(lms, LM.rightShoulder));
-  // If the shoulders don't look narrower at the top, the turn can't be read
-  // from this camera position (e.g. it isn't really face on), so skip it.
-  if (width(top) >= width(address) * 0.95) return null;
-  const ratio = width(top) / (width(address) || 1);
-  const turn = (Math.acos(ratio) * 180) / Math.PI;
-  const detail = `Estimated shoulder turn at the top: about ${Math.round(turn)}° (from how much your shoulders narrow on camera).`;
+  const turn = turnAngle(c, address, top, LM.leftShoulder, LM.rightShoulder);
+  if (turn === null) return null;
+  const detail = `Estimated shoulder turn at the top: about ${Math.round(turn)}°.`;
   const t = FO.shoulderTurnDegrees;
   if (turn < t.minor) {
     return withIssue("shoulder-turn", issue(
@@ -684,12 +688,36 @@ function shoulderTurn(c: Context): Finding | null {
   );
 }
 
+/**
+ * How far a body line (shoulders or hips) turned between two poses, in degrees,
+ * seen from above. Uses MediaPipe's depth estimate: from the front, a 2D
+ * picture can't show a turn properly (forward bend keeps the shoulders looking
+ * wide). Returns null when depth is missing or the turn can't be read.
+ */
+function turnAngle(c: Context, from: Landmark[], to: Landmark[], a: number, b: number): number | null {
+  const z = (lms: Landmark[], i: number) => lms[i].z;
+  if ([z(from, a), z(from, b), z(to, a), z(to, b)].some((v) => v === undefined)) return null;
+  // Line from one side to the other, seen from above: (sideways, depth).
+  // Depth uses the same scale as sideways (fractions of the video width).
+  const line = (lms: Landmark[]) => ({
+    x: (lms[a].x - lms[b].x) * c.track.width,
+    z: (lms[a].z! - lms[b].z!) * c.track.width,
+  });
+  const p = line(from);
+  const q = line(to);
+  const lengths = Math.hypot(p.x, p.z) * Math.hypot(q.x, q.z);
+  if (lengths === 0) return null;
+  const cos = Math.max(-1, Math.min(1, (p.x * q.x + p.z * q.z) / lengths));
+  return (Math.acos(cos) * 180) / Math.PI;
+}
+
 // ---------- Putting ----------
 
 function puttHead(c: Context): Finding | null {
   const { track, moments, address, impact, pxPerInch } = c;
-  if (!c.confident([address, impact], HEAD)) return null;
-  const moved = distance(headCenter(address, track), headCenter(impact, track)) / pxPerInch;
+  if (!c.confident([address, impact], [...HEAD, ...FEET])) return null;
+  const head = (lms: Landmark[]) => fromFeet(c, lms, headCenter(lms, track));
+  const moved = distance(head(address), head(impact)) / pxPerInch;
   const detail = `Your head moved ${inches(moved)} from address to impact.`;
   const g = grade(moved, PUTT.headMovementInches);
   if (g) {
@@ -709,8 +737,9 @@ function puttHead(c: Context): Finding | null {
 
 function puttLowerBody(c: Context): Finding | null {
   const { moments, address, impact, pxPerInch } = c;
-  if (!c.confident([address, impact], [LM.leftHip, LM.rightHip, LM.leftKnee, LM.rightKnee])) return null;
-  const anchor = (lms: Landmark[]) => mid(hipsMid(c, lms), mid(c.P(lms, LM.leftKnee), c.P(lms, LM.rightKnee)));
+  if (!c.confident([address, impact], [LM.leftHip, LM.rightHip, LM.leftKnee, LM.rightKnee, ...FEET])) return null;
+  const anchor = (lms: Landmark[]) =>
+    fromFeet(c, lms, mid(hipsMid(c, lms), mid(c.P(lms, LM.leftKnee), c.P(lms, LM.rightKnee))));
   const start = anchor(address);
   let worst = { move: 0, time: moments.impact };
   for (const f of c.between(moments.address, moments.impact)) {
@@ -741,14 +770,26 @@ function puttLowerBody(c: Context): Finding | null {
   );
 }
 
+const WRIST_SMOOTHING = 0.1; // seconds either side
+
+function median(values: number[]): number {
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[Math.floor(sorted.length / 2)] ?? 0;
+}
+
 function wristBreakdown(c: Context): Finding | null {
   const { moments, address, impact, lead } = c;
   if (!c.confident([address, impact], [lead.elbow, lead.wrist, lead.index])) return null;
   const wrist = (lms: Landmark[]) => angleDegrees(c.P(lms, lead.elbow), c.P(lms, lead.wrist), c.P(lms, lead.index));
-  const start = wrist(address);
+  // The finger points on a putter grip jump around from frame to frame (raw
+  // readings swung 25–45° on putts with steady wrists), so use the median
+  // angle over a short window. A real breakdown lasts much longer than that.
+  const smoothed = (time: number) =>
+    median(c.between(time - WRIST_SMOOTHING, time + WRIST_SMOOTHING).map((f) => wrist(f.lms)));
+  const start = smoothed(moments.address);
   let worst = { change: 0, time: moments.impact };
   for (const f of c.between(moments.address, moments.impact + 0.3)) {
-    const change = Math.abs(wrist(f.lms) - start);
+    const change = Math.abs(smoothed(f.time) - start);
     if (change > worst.change) worst = { change, time: f.time };
   }
   const detail = `Your lead wrist angle changed by up to ${Math.round(worst.change)}° during the stroke.`;

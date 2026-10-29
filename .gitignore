@@ -55,3 +55,6 @@ next-env.d.ts
 
 # temporary test copies of videos
 /public/_test/
+
+# test clips
+/test-videos/

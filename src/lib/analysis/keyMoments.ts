@@ -17,18 +17,19 @@ const MIN_STROKE = 0.12;
 // point before we accept that the downswing has started.
 const RETURN_SHARE = 0.6;
 // Frames within this share of the furthest point count as "paused at the top".
-const TOP_PLATEAU = 0.97;
-// Takeaway: walking back from the top, the hands are "at rest" once their
-// speed (averaged over SPEED_SPAN seconds) drops below this, in torso lengths/s.
-const TAKEAWAY_SPEED = 0.5;
-const SPEED_SPAN = 0.1;
-// Look this far before the address marker for the takeaway start.
-const TAKEAWAY_SEARCH = 1.5;
+const TOP_PLATEAU = 0.9;
+// Takeaway starts once the hands have moved this far from address (torso
+// lengths), or TAKEAWAY_SHARE of the way to the top for short putting strokes
+// (but at least TAKEAWAY_MIN, so tracking jitter doesn't count).
+const TAKEAWAY_MOVE = 0.08;
+const TAKEAWAY_SHARE = 0.1;
+const TAKEAWAY_MIN = 0.05;
 // The club head starts back before the hands visibly move (the wrists hinge
 // first), and pose detection can't see the club. So the takeaway is set this
 // many seconds before the hands move. Checked frame by frame on real full
-// swings; putts have almost no wrist hinge.
-export const CLUB_LEAD: Record<ShotMode, number> = { "full-swing": 0.12, putt: 0 };
+// swings and putts (putts have almost no wrist hinge, so it's only the short
+// delay before the hands have moved far enough to count).
+export const CLUB_LEAD: Record<ShotMode, number> = { "full-swing": 0.12, putt: 0.05 };
 // Address is shown this many seconds before the hands move, when the club is
 // still resting behind the ball.
 export const ADDRESS_LEAD = 0.25;
@@ -58,13 +59,6 @@ export function detectKeyMoments(track: PoseTrack, addressTime: number): KeyMome
     }
   }
   if (top < 0 || peak < MIN_STROKE) return null;
-  // The hands pause at the top, so the furthest point jumps around within that
-  // pause from frame to frame. Use the middle of the pause for a steady marker.
-  let first = top;
-  let last = top;
-  while (first > 0 && distances[first - 1] >= peak * TOP_PLATEAU) first--;
-  while (last < distances.length - 1 && distances[last + 1] >= peak * TOP_PLATEAU) last++;
-  const topTime = (after[first].time + after[last].time) / 2;
 
   // Impact: the closest return to address before the follow-through carries the hands away again.
   let impact = -1;
@@ -74,27 +68,34 @@ export function detectKeyMoments(track: PoseTrack, addressTime: number): KeyMome
   }
   if (impact < 0) return null;
 
+  // The hands pause at the top, so the furthest point jumps around within that
+  // pause from frame to frame (and tracking noise can dip in the middle of
+  // it). The pause runs from the first time the hands get near the furthest
+  // point to the last time before impact; its middle is a steady marker.
+  const paused = (i: number) => distances[i] >= peak * TOP_PLATEAU;
+  const first = distances.findIndex((_, i) => paused(i));
+  let last = top;
+  for (let i = top + 1; i < impact; i++) if (paused(i)) last = i;
+  const topTime = (after[first].time + after[last].time) / 2;
+
   return { address: addressTime, top: topTime, impact: after[impact].time };
 }
 
 /**
- * When the hands start the backswing. Walks back from the top until the hands
- * were (nearly) at rest, so a slow drift or waggle at address isn't counted
- * as part of the backswing.
+ * When the hands start the backswing: the first moment after address that
+ * they've clearly moved away from their address spot. (Address is
+ * already the last moment the hands were at rest, so slow drifts before it
+ * don't count, and pauses at the top don't matter.)
  */
 export function takeawayTime(track: PoseTrack, moments: Pick<KeyMoments, "address" | "top">): number {
-  const frames = framesAfter(track, moments.address - TAKEAWAY_SEARCH).filter((f) => f.time <= moments.top);
+  const frames = framesAfter(track, moments.address).filter((f) => f.time <= moments.top);
   if (frames.length < 2) return moments.address;
   const ruler = torsoLength(frames[0].landmarks, track) || 1;
-  for (let i = frames.length - 1; i > 0; i--) {
-    // The latest frame at least SPEED_SPAN seconds earlier.
-    let j = i - 1;
-    while (j > 0 && frames[i].time - frames[j].time < SPEED_SPAN) j--;
-    const moved = distance(handsPosition(frames[i].landmarks, track), handsPosition(frames[j].landmarks, track));
-    const speed = moved / ruler / (frames[i].time - frames[j].time);
-    if (speed < TAKEAWAY_SPEED) return frames[i].time;
-  }
-  return frames[0].time;
+  const home = handsPosition(frames[0].landmarks, track);
+  const moved = frames.map((f) => distance(handsPosition(f.landmarks, track), home) / ruler);
+  const threshold = Math.min(TAKEAWAY_MOVE, Math.max(TAKEAWAY_MIN, Math.max(...moved) * TAKEAWAY_SHARE));
+  const i = moved.findIndex((d) => d > threshold);
+  return i > 0 ? frames[i - 1].time : moments.address;
 }
 
 type FrameWithPose = PoseFrame & { landmarks: NonNullable<PoseFrame["landmarks"]> };
