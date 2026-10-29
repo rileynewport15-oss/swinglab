@@ -169,7 +169,13 @@ function Result({
         <div className="-mt-1 px-3 pb-3 pl-[2.875rem]">
           <p className="text-xs text-fairway-800">{f.meaning}</p>
           <p className="mt-1 text-xs text-fairway-600">{f.detail}</p>
-          <p className="mt-1 text-xs font-semibold text-fairway-600">▶ Shown on the video at {f.time.toFixed(2)}s</p>
+          {/* Jumps again (e.g. after playing the video), pauses there and re-highlights the aid. */}
+          <button
+            onClick={() => onSelect(f)}
+            className="-ml-2 mt-1 inline-flex min-h-9 items-center gap-1 rounded-lg px-2 text-xs font-semibold text-fairway-700 underline-offset-2 hover:bg-white/70 hover:underline"
+          >
+            <span aria-hidden>▶</span> See it at {f.time.toFixed(2)}s
+          </button>
           {f.issue && <HowToFix issue={f.issue} />}
         </div>
       )}
