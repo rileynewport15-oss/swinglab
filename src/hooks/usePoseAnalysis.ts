@@ -6,17 +6,26 @@ import { checkQuality, findAddress, type AddressFrame, type QualityProblem } fro
 import { ADDRESS_LEAD, detectKeyMoments, takeawayTime, type KeyMoments } from "@/lib/analysis/keyMoments";
 import { nearestFrame, type PoseTrack, type Px } from "@/lib/pose/landmarks";
 import type { ShotMode } from "@/config/analysisConfig";
-import { beforeCameraMove } from "@/lib/pose/cameraMotion";
+import { stillCameraPart } from "@/lib/pose/cameraMotion";
+import { cleanTrack } from "@/lib/pose/clean";
+import { detectView } from "@/lib/pose/view";
+import type { CameraAngle } from "@/lib/pose/autoAids";
 import { detectPuttMoments, type PuttMoments } from "@/lib/putting/moments";
-import { detectView } from "@/lib/putting/stroke";
 import { findBall } from "@/lib/putting/ball";
 import type { Moments } from "@/lib/moments";
 
 export type PoseAnalysis =
   | { status: "analyzing"; progress: number } // progress 0–1 (0 while the model loads)
   // `address` is the setup position for putts; `ball` is only looked for in
-  // putts filmed down the line.
-  | { status: "ready"; track: PoseTrack; address: AddressFrame; moments: Moments | null; ball: Px | null }
+  // putts filmed down the line; `view` is the camera angle seen in the video.
+  | {
+      status: "ready";
+      track: PoseTrack;
+      address: AddressFrame;
+      moments: Moments | null;
+      ball: Px | null;
+      view: CameraAngle;
+    }
   | { status: "failed"; problem: QualityProblem | "error"; track?: PoseTrack };
 
 // Share of the progress bar for the first (whole video) pass; the rest is the
@@ -35,6 +44,9 @@ const DETAIL_BEFORE_ADDRESS = 0.5;
 // seconds after the setup position.
 const PUTT_FIRST_PASS_FPS = 30;
 const PUTT_SEARCH_SECONDS = 3;
+// If the camera moves, the still stretch with a real swing (hands moving at
+// least this many torso lengths) is the one analyzed.
+const MIN_ACTION: Record<ShotMode, number> = { "full-swing": 1, putt: 0.15 };
 
 /**
  * Runs pose detection when a video is loaded (and again if the mode
@@ -44,7 +56,7 @@ const PUTT_SEARCH_SECONDS = 3;
 export function usePoseAnalysis(
   videoUrl: string,
   mode: ShotMode,
-  onReady: (track: PoseTrack, address: AddressFrame, moments: Moments | null, ball: Px | null) => void,
+  onReady: (track: PoseTrack, address: AddressFrame, moments: Moments | null, ball: Px | null, view: CameraAngle) => void,
 ): PoseAnalysis {
   const [analysis, setAnalysis] = useState<PoseAnalysis>({ status: "analyzing", progress: 0 });
 
@@ -67,14 +79,20 @@ export function usePoseAnalysis(
 
     (async () => {
       // 1. Whole video, quickly: find the golfer and the address position.
-      // If the camera moves (e.g. pans to follow the ball), only use the part before it.
-      const coarse = beforeCameraMove(
-        await analyzeVideo(videoUrl, {
-          signal: controller.signal,
-          maxFps: mode === "putt" ? PUTT_FIRST_PASS_FPS : undefined,
-          onProgress: (p) => progress(p * FIRST_PASS),
-        }),
+      // If the camera moves (e.g. pans to follow the ball), only the still
+      // stretch with the swing in it is used. Low-confidence frames are
+      // dropped and the rest smoothed.
+      const coarse = cleanTrack(
+        stillCameraPart(
+          await analyzeVideo(videoUrl, {
+            signal: controller.signal,
+            maxFps: mode === "putt" ? PUTT_FIRST_PASS_FPS : undefined,
+            onProgress: (p) => progress(p * FIRST_PASS),
+          }),
+          MIN_ACTION[mode],
+        ),
       );
+      const firstTime = coarse.frames[0]?.time ?? 0;
       const lastTime = coarse.frames.at(-1)?.time ?? Infinity;
       let address = findAddress(coarse);
       const problem = checkQuality(coarse, address);
@@ -83,14 +101,20 @@ export function usePoseAnalysis(
         return;
       }
 
-      const detailPass = (start: number, end: number) =>
-        analyzeVideo(videoUrl, {
-          signal: controller.signal,
-          start,
-          end,
-          fps: DETAIL_FPS,
-          onProgress: (p) => progress(FIRST_PASS + p * (1 - FIRST_PASS)),
-        });
+      // A close look at part of the swing, cleaned and merged into the quick pass.
+      const withDetail = async (start: number, end: number) =>
+        cleanTrack(
+          mergeDetail(
+            coarse,
+            await analyzeVideo(videoUrl, {
+              signal: controller.signal,
+              start: Math.max(start, firstTime),
+              end,
+              fps: DETAIL_FPS,
+              onProgress: (p) => progress(FIRST_PASS + p * (1 - FIRST_PASS)),
+            }),
+          ),
+        );
 
       if (mode === "putt") {
         // 2. Putts: the rough stroke, then a close look at it (or at the
@@ -98,18 +122,18 @@ export function usePoseAnalysis(
         const rough = detectPuttMoments(coarse);
         const start = Math.max(0, (rough?.setup ?? address.time) - DETAIL_BEFORE_ADDRESS);
         const end = Math.min(rough ? rough.finish + 0.4 : address.time + PUTT_SEARCH_SECONDS, start + MAX_DETAIL_SECONDS, lastTime);
-        const track = end > start ? mergeDetail(coarse, await detailPass(start, end)) : coarse;
+        const track = end > start ? await withDetail(start, end) : coarse;
         const moments: PuttMoments | null = detectPuttMoments(track) ?? rough;
         const setup = moments ? nearestFrame(track, moments.setup) : null;
         if (setup?.landmarks) {
           address = { index: track.frames.indexOf(setup), time: setup.time, landmarks: setup.landmarks };
         }
         // Down the line, find the ball for the eye line.
-        const ball =
-          detectView(track) === "down-the-line" ? await findBall(videoUrl, address.time, address.landmarks, track) : null;
+        const view = detectView(track, address.time);
+        const ball = view === "down-the-line" ? await findBall(videoUrl, address.time, address.landmarks, track) : null;
         if (controller.signal.aborted) return;
-        setAnalysis({ status: "ready", track, address, moments, ball });
-        onReadyRef.current(track, address, moments, ball);
+        setAnalysis({ status: "ready", track, address, moments, ball, view });
+        onReadyRef.current(track, address, moments, ball, view);
         return;
       }
 
@@ -119,7 +143,7 @@ export function usePoseAnalysis(
       if (rough) {
         const start = Math.max(0, address.time - DETAIL_BEFORE_ADDRESS);
         const end = Math.min(rough.impact + 0.4, start + MAX_DETAIL_SECONDS, lastTime);
-        track = mergeDetail(coarse, await detailPass(start, end));
+        track = await withDetail(start, end);
       }
 
       // 3. Precise top and impact from the detailed frames.
@@ -137,8 +161,9 @@ export function usePoseAnalysis(
         }
       }
 
-      setAnalysis({ status: "ready", track, address, moments, ball: null });
-      onReadyRef.current(track, address, moments, null);
+      const view = detectView(track, address.time);
+      setAnalysis({ status: "ready", track, address, moments, ball: null, view });
+      onReadyRef.current(track, address, moments, null, view);
     })().catch((err) => {
       if (controller.signal.aborted) return;
       console.error("Pose analysis failed", err);

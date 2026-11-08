@@ -1,8 +1,9 @@
+import type { CameraAngle } from "../pose/autoAids";
 import { LM, distance, handsPosition, headCenter, mid, px, torsoLength, type Landmark, type PoseTrack, type Px } from "../pose/landmarks";
 
 // Geometry shared by putting moments, aids and results.
 
-export type PuttView = "face-on" | "down-the-line";
+export type PuttView = CameraAngle;
 
 export type PoseSample = { time: number; lms: Landmark[] };
 
@@ -13,21 +14,7 @@ export function samples(track: PoseTrack, from = -Infinity, to = Infinity): Pose
     .map((f) => ({ time: f.time, lms: f.landmarks! }));
 }
 
-// Seen from the front, the shoulders are about 0.8 torso lengths apart; from
-// down the line one is behind the other (about 0.1–0.3).
-const FACE_ON_SHOULDERS = 0.5;
-
-/**
- * Which way the camera looks at the golfer, from the pose itself. Used to
- * pick how the stroke is timed, so a wrong camera angle choice can't break it.
- */
-export function detectView(track: PoseTrack): PuttView {
-  const widths = samples(track).map(({ lms }) => {
-    const ruler = torsoLength(lms, track) || 1;
-    return Math.abs(px(lms, LM.leftShoulder, track).x - px(lms, LM.rightShoulder, track).x) / ruler;
-  });
-  return median(widths) >= FACE_ON_SHOULDERS ? "face-on" : "down-the-line";
-}
+export { detectView } from "../pose/view";
 
 export const feetMid = (lms: Landmark[], track: PoseTrack) =>
   mid(px(lms, LM.leftAnkle, track), px(lms, LM.rightAnkle, track));

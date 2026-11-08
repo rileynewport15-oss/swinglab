@@ -52,6 +52,32 @@ export function poseAt(track: PoseTrack, time: number): Landmark[] | null {
   });
 }
 
+/**
+ * The pose around a moment, averaged over the frames within `halfWindow`
+ * seconds either side (weighted by confidence), so a key position isn't
+ * read from one jittery frame. Falls back to `poseAt` if no frame is that close.
+ */
+export function poseAround(track: PoseTrack, time: number, halfWindow: number): Landmark[] | null {
+  const near = track.frames.filter((f) => f.landmarks && Math.abs(f.time - time) <= halfWindow + 1e-6);
+  if (near.length < 2) return poseAt(track, time);
+  return near[0].landmarks!.map((_, k) => {
+    let sx = 0, sy = 0, sz = 0, sw = 0, zw = 0, sv = 0;
+    for (const f of near) {
+      const p = f.landmarks![k];
+      const w = Math.max(p.visibility, 0.05);
+      sx += p.x * w;
+      sy += p.y * w;
+      sv += p.visibility;
+      sw += w;
+      if (p.z !== undefined) {
+        sz += p.z * w;
+        zw += w;
+      }
+    }
+    return { x: sx / sw, y: sy / sw, z: zw > 0 ? sz / zw : undefined, visibility: sv / near.length };
+  });
+}
+
 export function drawSkeleton(ctx: CanvasRenderingContext2D, lms: Landmark[], size: Size) {
   const at = (i: number) => ({ x: lms[i].x * size.width, y: lms[i].y * size.height });
   ctx.save();

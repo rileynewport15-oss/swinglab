@@ -10,6 +10,7 @@ type Props = {
   mode: ShotMode;
   analysis: PoseAnalysis;
   cameraAngle: CameraAngle;
+  angleDetected: boolean; // true until the golfer picks the other angle
   onChangeAngle: (angle: CameraAngle) => void;
   onResetAids: () => void;
   drawing: DrawingApi;
@@ -32,7 +33,7 @@ const TIPS = [
 // Results of the pose analysis: camera angle, skeleton toggle, and the
 // address frame — or friendly filming tips plus manual placement if it failed.
 export default function AnalysisPanel(props: Props) {
-  const { mode, analysis, cameraAngle, onChangeAngle, onResetAids } = props;
+  const { mode, analysis, cameraAngle, angleDetected, onChangeAngle, onResetAids } = props;
   const putt = mode === "putt";
 
   if (analysis.status === "failed") {
@@ -84,7 +85,13 @@ export default function AnalysisPanel(props: Props) {
           </button>
         ))}
       </div>
-
+      {ready && (
+        <p className="-mt-1 text-xs text-fairway-700">
+          {angleDetected
+            ? `Camera angle detected from your video: ${CAMERA_ANGLES.find((a) => a.id === cameraAngle)?.label}. Tap the other one if it's wrong.`
+            : "Camera angle set by you."}
+        </p>
+      )}
 
       {ready && (
         <button

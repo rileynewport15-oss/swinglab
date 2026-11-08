@@ -1,5 +1,6 @@
 import type { PoseTrack } from "../pose/landmarks";
-import { bodyRuler, detectView, handPath, median, type HandSample, type PuttView } from "./stroke";
+import { detectView } from "../pose/view";
+import { bodyRuler, handPath, median, type HandSample, type PuttView } from "./stroke";
 
 export type PuttMomentId = "setup" | "backstroke" | "impact" | "finish";
 export type PuttMoments = Record<PuttMomentId, number>; // times in seconds

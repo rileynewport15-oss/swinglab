@@ -21,6 +21,7 @@ import { nearestFrame, type Landmark, type PoseTrack, type Px } from "@/lib/pose
 import type { KeyMoments } from "@/lib/analysis/keyMoments";
 import { analyzeSwing } from "@/lib/analysis/metrics";
 import type { Finding } from "@/lib/analysis/findings";
+import { buildReport } from "@/lib/analysis/report";
 import { analyzePutt } from "@/lib/putting/metrics";
 import { buildPuttAids } from "@/lib/putting/aids";
 import type { PuttMoments } from "@/lib/putting/moments";
@@ -36,31 +37,14 @@ type Props = {
 
 const MIN_GAP = 0.03; // seconds kept between markers so they stay in order (e.g. Address → Top → Impact)
 
-// The camera angle is asked once, then remembered in this browser.
-const ANGLE_KEY = "swinglab.cameraAngle";
-function loadAngle(): CameraAngle | null {
-  try {
-    const saved = localStorage.getItem(ANGLE_KEY);
-    return saved === "face-on" || saved === "down-the-line" ? saved : null;
-  } catch {
-    return null;
-  }
-}
-function saveAngle(angle: CameraAngle) {
-  try {
-    localStorage.setItem(ANGLE_KEY, angle);
-  } catch {
-    // Private browsing etc.: we'll just ask again next time.
-  }
-}
-
 // The review screen: the video (with pose skeleton and aids on top) plus all the controls.
 export default function VideoAnalyzer({ videoUrl, mode, onChangeVideo }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [aspect, setAspect] = useState(9 / 16);
   const drawing = useDrawing();
-  const [cameraAngle, setCameraAngle] = useState<CameraAngle>(() => loadAngle() ?? "face-on");
-  const [angleAsked, setAngleAsked] = useState(() => loadAngle() !== null);
+  // The camera angle is detected from the video; the golfer can still switch it.
+  const [cameraAngle, setCameraAngle] = useState<CameraAngle>("face-on");
+  const [angleDetected, setAngleDetected] = useState(false);
   const [aidSettings, setAidSettings] = useAidSettings();
   const [moments, setMoments] = useState<Moments | null>(null);
   const [activeFinding, setActiveFinding] = useState<string | null>(null);
@@ -88,21 +72,20 @@ export default function VideoAnalyzer({ videoUrl, mode, onChangeVideo }: Props) 
   }
 
   // When analysis finishes: place the aids, mark the key moments, show the address (setup) frame.
-  const analysis = usePoseAnalysis(videoUrl, mode, (track, address, found, ball) => {
+  const analysis = usePoseAnalysis(videoUrl, mode, (track, address, found, ball, view) => {
     // Without the swing, keep just the address marker so it can still be adjusted.
     const m = found ?? (Object.fromEntries(specs.map((x, i) => [x.id, i === 0 ? address.time : NaN])) as Moments);
-    placeAids(track, address.landmarks, cameraAngle, address.time, m, ball);
+    setCameraAngle(view);
+    setAngleDetected(true);
+    placeAids(track, address.landmarks, view, address.time, m, ball);
     setMoments(m);
     jumpTo(address.time);
-    saveAngle(cameraAngle); // counts as answered, even if the default was kept
-    setAngleAsked(true);
   });
   const ball = analysis.status === "ready" ? analysis.ball : null;
 
   function changeAngle(angle: CameraAngle) {
     setCameraAngle(angle);
-    saveAngle(angle);
-    setAngleAsked(true);
+    setAngleDetected(false);
     if (analysis.status === "ready") placeAids(analysis.track, addressPose(), angle, addressTime(), moments, ball);
   }
 
@@ -118,12 +101,27 @@ export default function VideoAnalyzer({ videoUrl, mode, onChangeVideo }: Props) 
 
   const swingFound = allFound(moments, mode);
 
-  // Findings recalculate instantly when a marker or the camera angle changes.
-  const findings = useMemo(() => {
-    if (analysis.status !== "ready" || !swingFound || !moments) return [];
-    return mode === "putt"
-      ? analyzePutt({ track: analysis.track, moments: moments as PuttMoments, angle: cameraAngle, ball: analysis.ball })
-      : analyzeSwing({ track: analysis.track, moments: moments as KeyMoments, angle: cameraAngle });
+  // Results recalculate instantly when a marker or the camera angle changes.
+  const report = useMemo(() => {
+    if (analysis.status !== "ready" || !swingFound || !moments) return null;
+    if (mode === "putt") {
+      const m = moments as PuttMoments;
+      const result = analyzePutt({ track: analysis.track, moments: m, angle: cameraAngle, ball: analysis.ball });
+      if (!result) return null;
+      return buildReport({
+        ...result,
+        mode,
+        phaseTimes: { setup: m.setup, backstroke: m.setup, forward: m.backstroke, impact: m.impact, finish: m.finish },
+      });
+    }
+    const result = analyzeSwing({ track: analysis.track, moments: moments as KeyMoments, angle: cameraAngle });
+    if (!result) return null;
+    const p = result.phases;
+    return buildReport({
+      ...result,
+      mode,
+      phaseTimes: { setup: p.setup, takeaway: p.takeaway, top: p.top, transition: p.top, downswing: p.transition, impact: p.impact, finish: p.finish },
+    });
   }, [analysis, swingFound, moments, mode, cameraAngle]);
 
   const markers: Marker[] = specs
@@ -269,13 +267,7 @@ export default function VideoAnalyzer({ videoUrl, mode, onChangeVideo }: Props) 
               </p>
             )}
             {analysis.status === "analyzing" && (
-              <AnalyzingOverlay
-                mode={mode}
-                progress={analysis.progress}
-                askAngle={!angleAsked}
-                cameraAngle={cameraAngle}
-                onChooseAngle={changeAngle}
-              />
+              <AnalyzingOverlay mode={mode} progress={analysis.progress} />
             )}
           </div>
         </div>
@@ -291,10 +283,11 @@ export default function VideoAnalyzer({ videoUrl, mode, onChangeVideo }: Props) 
       {analysis.status === "ready" && (
         <div className="lg:sticky lg:top-4 lg:col-start-3 lg:row-start-1">
           <ResultsPanel
-            findings={findings}
+            report={report}
             swingFound={swingFound}
             activeId={activeFinding}
             onSelect={selectFinding}
+            onJump={jumpTo}
             mode={mode}
             note={
               mode === "putt" && cameraAngle === "down-the-line"
@@ -319,6 +312,7 @@ export default function VideoAnalyzer({ videoUrl, mode, onChangeVideo }: Props) 
           mode={mode}
           analysis={analysis}
           cameraAngle={cameraAngle}
+          angleDetected={angleDetected}
           onChangeAngle={changeAngle}
           onResetAids={() =>
             analysis.status === "ready" && placeAids(analysis.track, addressPose(), cameraAngle, addressTime(), moments, ball)

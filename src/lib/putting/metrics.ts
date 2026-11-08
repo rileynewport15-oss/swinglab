@@ -1,9 +1,22 @@
 import { ANALYSIS_CONFIG } from "@/config/analysisConfig";
 import { angleDegrees } from "../shapes";
-import { poseAt } from "../pose/skeleton";
+import { poseAround, poseAt } from "../pose/skeleton";
 import { LM, distance, handsPosition, headCenter, mid, px, torsoLength, type Landmark, type PoseTrack, type Px } from "../pose/landmarks";
 import type { CameraAngle } from "../pose/autoAids";
-import { grade, inches, issue, strength, withIssue, type Finding, type Severity } from "../analysis/findings";
+import {
+  grade,
+  inches,
+  inchesShort,
+  issue,
+  rate,
+  strength,
+  handsVisibility,
+  visibilityOf,
+  withIssue,
+  type Finding,
+  type Rating,
+  type Severity,
+} from "../analysis/findings";
 import { strokeSignal, takeawayTime, type PuttMoments } from "./moments";
 import { feetMid, fromFeet, handPath, median, pendulumChange, samples } from "./stroke";
 
@@ -22,16 +35,16 @@ type Input = {
  * pendulum); down the line shows the path and where the eyes are. Both show
  * head and lower body stillness. Biggest issues first.
  */
-export function analyzePutt(input: Input): Finding[] {
+export function analyzePutt(input: Input): { findings: Finding[]; pxPerInch: number } | null {
   const c = makeContext(input);
-  if (!c) return [];
+  if (!c) return null;
   const checks: ((c: Context) => Finding | null)[] =
     input.angle === "face-on"
-      ? [tempo, strokeLength, head, lowerBody, triangle, shoulderRock]
+      ? [tempo, strokeLength, acceleration, head, lowerBody, triangle, shoulderRock]
       : [head, lowerBody, strokePath, eyesOverBall];
   const findings = checks.map((check) => check(c)).filter((f): f is Finding => f !== null);
   const rank = (f: Finding) => (f.status === "strength" ? 2 : f.severity === "major" ? 0 : 1);
-  return findings.sort((a, b) => rank(a) - rank(b) || b.score - a.score);
+  return { findings: findings.sort((a, b) => rank(a) - rank(b) || b.score - a.score), pxPerInch: c.pxPerInch };
 }
 
 type Context = Input & {
@@ -42,8 +55,9 @@ type Context = Input & {
 };
 
 function makeContext(input: Input): Context | null {
-  const setup = poseAt(input.track, input.moments.setup);
-  const impact = poseAt(input.track, input.moments.impact);
+  // Each key position is the average of the frames around it.
+  const setup = poseAround(input.track, input.moments.setup, CFG.keyPoseWindow.address);
+  const impact = poseAround(input.track, input.moments.impact, CFG.keyPoseWindow.impact);
   if (!setup || !impact) return null;
   return {
     ...input,
@@ -82,29 +96,36 @@ function tempo(c: Context): Finding | null {
   const ratio = back / through;
   const t = PUTT.tempo;
   const r = ratio.toFixed(1);
-  const detail = `Backstroke ${back.toFixed(2)}s, forward stroke ${through.toFixed(2)}s. Ideal is about ${t.ideal} to 1.`;
+  const rating: Rating = {
+    label: "your putting tempo",
+    metric: "puttTempo",
+    visibility: handsVisibility([c.setup, c.impact]),
+    value: ratio,
+    thresholds: [t.goodMin, t.goodMax],
+  };
+  const detail = `Backstroke ${back.toFixed(2)}s, forward stroke ${through.toFixed(2)}s: ${r} to 1 (good putters are close to ${t.ideal} to 1).`;
   if (ratio >= t.goodMin && ratio <= t.goodMax) {
-    return strength(
+    return rate(rating, strength(
       "tempo",
-      `Smooth tempo: ${r} to 1`,
+      `Smooth stroke rhythm: ${r} to 1`,
       detail,
-      "A steady 2-to-1 rhythm makes your distance control much more consistent.",
+      `Your putter goes back for ${back.toFixed(2)}s and comes through in ${through.toFixed(2)}s, the steady back-and-through rhythm that makes distance repeatable.`,
       moments.backstroke,
       "handPath",
-    );
+    ));
   }
   const severity: Severity = ratio < t.okMin || ratio > t.okMax ? "major" : "minor";
   const score = ratio < t.goodMin ? t.goodMin / ratio : ratio / t.goodMax;
-  return withIssue(
+  return rate(rating, withIssue(
     "putt-tempo",
     ratio < t.goodMin
       ? issue(
           "tempo",
           severity,
           score,
-          `Your backstroke is rushed (${r} to 1)`,
+          `Quick backstroke (${r} to 1)`,
           detail,
-          "A quick, jabby backstroke makes it hard to control speed, so putts often finish well short or long.",
+          `Your backstroke takes only ${back.toFixed(2)}s against a ${through.toFixed(2)}s forward stroke. Snatching it back makes the hit at the ball the thing that sets distance, which is why lag putts come up long or short.`,
           moments.backstroke,
           "handPath",
         )
@@ -112,13 +133,13 @@ function tempo(c: Context): Finding | null {
           "tempo",
           severity,
           score,
-          `Your forward stroke is slow compared to your backstroke (${r} to 1)`,
+          `Forward stroke drags (${r} to 1)`,
           detail,
-          "A slow forward stroke usually means you're decelerating, which leaves putts short and pulled or pushed.",
+          `A ${through.toFixed(2)}s forward stroke after a ${back.toFixed(2)}s backstroke means the putter is easing into the ball, and a slowing putter face twists open or closed.`,
           moments.backstroke,
           "handPath",
         ),
-  );
+  ));
 }
 
 // ---------- Stroke length (face on) ----------
@@ -161,40 +182,103 @@ function strokeLength(c: Context): Finding | null {
   const l = strokeLengths(track, moments);
   if (!l || l.backInches < 1) return null;
   const ratio = l.throughInches / l.backInches;
-  const detail = `Backstroke ${inches(l.backInches)}, follow-through ${inches(l.throughInches)} (${Math.round(ratio * 100)}% as long). About equal, or a little longer through, is ideal.`;
+  const detail = `Backstroke ${inches(l.backInches)}, follow-through ${inches(l.throughInches)} (${Math.round(ratio * 100)}% as long).`;
   const { short, long } = PUTT.strokeLengthRatio;
+  const rating: Rating = {
+    phase: "finish",
+    label: "your stroke length",
+    metric: "strokeLength",
+    visibility: handsVisibility([setup]),
+    value: ratio,
+    thresholds: [short.minor, long.minor],
+  };
   if (ratio < short.minor) {
-    return withIssue("putt-length", issue(
+    return rate(rating, withIssue("putt-length", issue(
       "stroke-length",
       ratio < short.major ? "major" : "minor",
       short.minor / Math.max(ratio, 0.1),
-      "Your follow-through is shorter than your backstroke",
+      `Short follow-through (${Math.round(ratio * 100)}% of the backstroke)`,
       detail,
-      "A long backstroke with a short follow-through means you're slowing down through the ball. That often leaves putts short and pulled or pushed.",
+      `Your hands went back ${inches(l.backInches)} but only ${inches(l.throughInches)} through. Stopping short like that means the putter was slowing down at the ball.`,
       l.throughTime,
       "strokeLength",
-    ));
+    )));
   }
   if (ratio > long.minor) {
-    return withIssue("putt-length", issue(
+    return rate(rating, withIssue("putt-length", issue(
       "stroke-length",
       ratio > long.major ? "major" : "minor",
       ratio / long.minor,
-      "Your backstroke is much shorter than your follow-through",
+      `Backstroke much shorter than the follow-through (${inchesShort(l.backInches)} back)`,
       detail,
-      "A very short backstroke means you have to hit at the ball to get it there, a jabby stroke that's hard to control. Let the putter swing back a little further.",
+      `Only ${inches(l.backInches)} back for ${inches(l.throughInches)} through means you're jabbing at the ball to make up the speed, which is hard to repeat.`,
       l.backTime,
       "strokeLength",
-    ));
+    )));
   }
-  return strength(
+  return rate(rating, strength(
     "stroke-length",
-    "Your follow-through matched your backstroke",
+    "Follow-through matches the backstroke",
     detail,
-    "An equal or slightly longer follow-through is a sign of a smooth, accelerating stroke.",
+    `${inches(l.backInches)} back and ${inches(l.throughInches)} through is the even, pendulum-like length that lets the putter swing instead of hit.`,
     l.throughTime,
     "strokeLength",
-  );
+  ));
+}
+
+/**
+ * Face on: accelerating through impact. The hands' speed along the target
+ * line during the forward stroke: a good stroke is still speeding up (or at
+ * its fastest) at impact; a decelerating one peaks early and arrives slower.
+ */
+function acceleration(c: Context): Finding | null {
+  const { track, moments, setup } = c;
+  if (!c.confident([setup, c.impact], HANDS)) return null;
+  const path = handPath(track, moments.backstroke, moments.finish);
+  if (path.length < 6) return null;
+  const forward = Math.sign(atTime(path, moments.impact).x - atTime(path, moments.backstroke).x) || 1;
+  // Speed along the target line, from neighboring frames, in inches per second.
+  const speeds = path.slice(1, -1).map((p, i) => ({
+    time: p.time,
+    speed: (((path[i + 2].hands.x - path[i].hands.x) * forward) / (path[i + 2].time - path[i].time)) / c.pxPerInch,
+  }));
+  const before = speeds.filter((s) => s.time <= moments.impact + 0.01);
+  if (before.length < 3) return null;
+  const peak = before.reduce((a, b) => (b.speed > a.speed ? b : a));
+  const atImpact = speeds.reduce((a, b) => (Math.abs(b.time - moments.impact) < Math.abs(a.time - moments.impact) ? b : a));
+  if (peak.speed <= 0) return null;
+  const share = Math.min(1, atImpact.speed / peak.speed);
+  const early = moments.impact - peak.time;
+  const detail = `Top hand speed ${Math.round(peak.speed)} in/s, ${early > 0.01 ? `${Math.round(early * 1000)} ms before impact` : "at impact"}; at impact ${Math.round(atImpact.speed)} in/s (${Math.round(share * 100)}% of top speed).`;
+  const L = PUTT.impactSpeedShare;
+  const rating: Rating = {
+    phase: "impact",
+    label: "your acceleration through the ball",
+    metric: "acceleration",
+    visibility: handsVisibility([setup, c.impact]),
+    value: share,
+    thresholds: [L.minor],
+  };
+  if (early > PUTT.peakBeforeSeconds && share < L.minor) {
+    return rate(rating, withIssue("putt-decel", issue(
+      "acceleration",
+      share < L.major ? "major" : "minor",
+      L.minor / Math.max(share, 0.1),
+      `Decelerating: ${Math.round((1 - share) * 100)}% slower at impact than at top speed`,
+      detail,
+      `Your hands were fastest ${Math.round(early * 1000)} ms before impact and had already slowed to ${Math.round(share * 100)}% of that by the ball. A putter that's slowing down at contact lets the face twist and makes speed hard to judge.`,
+      peak.time,
+      "handPath",
+    )));
+  }
+  return rate(rating, strength(
+    "acceleration",
+    "Accelerating through the ball",
+    detail,
+    `Your hands were still at ${Math.round(share * 100)}% of their top speed at impact, so the putter swung through the ball instead of stopping at it.`,
+    moments.impact,
+    "handPath",
+  ));
 }
 
 // ---------- Stillness (both angles) ----------
@@ -204,28 +288,36 @@ function head(c: Context): Finding | null {
   if (!c.confident([setup, impact], [...HEAD, ...FEET])) return null;
   const at = (lms: Landmark[]) => fromFeet(lms, track, headCenter(lms, track));
   const moved = distance(at(setup), at(impact)) / pxPerInch;
-  const detail = `Your head moved ${inches(moved)} from setup to impact.`;
+  const detail = `Your head moved ${inches(moved)} from setup to impact (measured from your feet, so camera wobble doesn't count).`;
+  const rating: Rating = {
+    phase: "impact",
+    label: "your head",
+    metric: "puttHead",
+    visibility: visibilityOf([setup, impact], HEAD),
+    value: moved,
+    thresholds: [PUTT.headMovementInches.minor],
+  };
   const g = grade(moved, PUTT.headMovementInches);
   if (g) {
-    return withIssue("putt-stillness", issue(
+    return rate(rating, withIssue("putt-stillness", issue(
       "head",
       g,
       moved / PUTT.headMovementInches.minor,
-      `Your head moved ${inches(moved)} during the stroke`,
+      `Head moves ${inchesShort(moved)} during the stroke`,
       detail,
-      "Moving your head shifts your shoulders and the putter face, which often leads to pulled or pushed putts. Keep your eyes over the ball until it's gone.",
+      `Your head shifted ${inches(moved)} before the ball was struck, and your shoulders go with it, which swings the putter off the line you set up on.`,
       moments.impact,
       "puttHead",
-    ));
+    )));
   }
-  return strength(
+  return rate(rating, strength(
     "head",
-    "Your head stayed still",
+    "Head stayed still",
     detail,
-    "A still head keeps the putter face square and your contact centered.",
+    "Your head stayed in its box through impact, so the shoulders could rock around a fixed point.",
     moments.impact,
     "puttHead",
-  );
+  ));
 }
 
 function lowerBody(c: Context): Finding | null {
@@ -241,27 +333,35 @@ function lowerBody(c: Context): Finding | null {
     if (move > worst.move) worst = { move, time: f.time };
   }
   const detail = `Your hips and knees moved up to ${inches(worst.move)} during the stroke.`;
+  const rating: Rating = {
+    phase: "forward",
+    label: "your lower body",
+    metric: "puttLowerBody",
+    visibility: visibilityOf([setup, impact], points),
+    value: worst.move,
+    thresholds: [PUTT.lowerBodyMovementInches.minor],
+  };
   const g = grade(worst.move, PUTT.lowerBodyMovementInches);
   if (g) {
-    return withIssue("putt-stillness", issue(
+    return rate(rating, withIssue("putt-stillness", issue(
       "lower-body",
       g,
       worst.move / PUTT.lowerBodyMovementInches.minor,
-      `Your lower body moved ${inches(worst.move)} during the stroke`,
+      `Lower body sways ${inchesShort(worst.move)}`,
       detail,
-      "Lower-body movement sways the putter off line and changes your contact, which hurts distance control. Keep your legs quiet and rock your shoulders.",
+      `Your hips and knees moved ${inches(worst.move)} during a stroke that should only move the shoulders and arms, which carries the putter off its arc and changes where you strike the ball.`,
       worst.time,
       "lowerBody",
-    ));
+    )));
   }
-  return strength(
+  return rate(rating, strength(
     "lower-body",
-    "Your lower body stayed quiet",
+    "Lower body stayed quiet",
     detail,
-    "A quiet lower body gives you a stable base for a repeatable stroke.",
+    "Your legs and hips stayed put, giving the stroke a stable base.",
     worst.time,
     "lowerBody",
-  );
+  ));
 }
 
 // ---------- The pendulum (face on) ----------
@@ -339,27 +439,39 @@ function triangle(c: Context): Finding | null {
   const throughOf = (key: "triangle" | "wrist") => Math.round(parts.find((p) => p.key === key && p.where === "through impact")!.change);
   const backOf = (key: "triangle" | "wrist") => Math.round(parts.find((p) => p.key === key && p.where !== "through impact")!.change);
   const detail = `Through impact, the triangle between your shoulders and hands changed shape by up to ${throughOf("triangle")}° and your lead wrist angle by up to ${throughOf("wrist")}° (backstroke: ${backOf("triangle")}° and ${backOf("wrist")}°).`;
+  const rating: Rating = {
+    phase: worst.where === "through impact" ? "impact" : "backstroke",
+    label: "your wrists",
+    metric: "triangle",
+    visibility: visibilityOf([setup, impact], [...SHOULDERS, ...HANDS]),
+    value: worst.value,
+    thresholds: [worst.limits.minor],
+  };
   const g = grade(worst.value, worst.limits);
   if (g) {
-    return withIssue("wrist-breakdown", issue(
+    return rate(rating, withIssue("wrist-breakdown", issue(
       "triangle",
       g,
       worst.value / worst.limits.minor,
-      worst.key === "wrist" ? `Your lead wrist breaks down ${worst.where}` : `Your arms and hands break the triangle ${worst.where}`,
+      worst.key === "wrist"
+        ? `Lead wrist breaks down ${worst.where} (${Math.round(worst.change)}°)`
+        : `Hands break the triangle ${worst.where} (${Math.round(worst.change)}°)`,
       detail,
-      "When the wrists hinge or the hands run ahead of or behind the shoulders, the putter face and loft change, which often leads to pulls, pushes and poor distance control. Keep the triangle and let your shoulders rock the putter.",
+      worst.key === "wrist"
+        ? `Your lead wrist angle changed ${Math.round(worst.change)}° ${worst.where}. Each degree of hinge adds loft and turns the face, so the ball comes off the putter differently every time.`
+        : `Your hands moved ${Math.round(worst.change)}° away from where the rocking shoulders would carry them ${worst.where}, so the arms are adding their own swing on top of the pendulum.`,
       worst.time,
       "triangle",
-    ));
+    )));
   }
-  return strength(
+  return rate(rating, strength(
     "triangle",
-    "Your pendulum triangle held its shape",
+    "Pendulum triangle held its shape",
     detail,
-    "Quiet wrists and arms keep the putter face square and your speed consistent.",
+    `The triangle changed by no more than ${throughOf("triangle")}° through impact, so the shoulders carried the putter without the wrists adding a flick.`,
     parts[0].time,
     "triangle",
-  );
+  ));
 }
 
 /** Shoulders doing the work: how much of the hands' swing comes from the shoulders rocking. */
@@ -384,26 +496,34 @@ function shoulderRock(c: Context): Finding | null {
   const pct = Math.round(share * 100);
   const detail = `About ${pct}% of your hands' swing came from your shoulders rocking (100% is a perfect pendulum).`;
   const t = PUTT.shoulderRockShare;
+  const rating: Rating = {
+    phase: "backstroke",
+    label: "your shoulder rock",
+    metric: "shoulderRock",
+    visibility: visibilityOf([setup, impact], [...SHOULDERS, ...HANDS]),
+    value: share,
+    thresholds: [t.minor],
+  };
   if (share < t.minor) {
-    return withIssue("shoulder-rock", issue(
+    return rate(rating, withIssue("shoulder-rock", issue(
       "shoulders",
       share < t.major ? "major" : "minor",
       t.minor / Math.max(share, 0.1),
-      "Your arms and hands are doing the work, not your shoulders",
+      `Arms do the work: shoulders give only ${pct}% of the swing`,
       detail,
-      "When the arms and hands swing the putter on their own, the face and speed change from putt to putt. Rocking the shoulders like a pendulum makes the stroke repeatable.",
+      `Only ${pct}% of the putter's swing came from your shoulders; the rest is your arms and hands moving on their own, which is much harder to repeat under pressure.`,
       moments.backstroke,
       "shoulders",
-    ));
+    )));
   }
-  return strength(
+  return rate(rating, strength(
     "shoulders",
-    "Your shoulders rocked the putter like a pendulum",
+    "Shoulders rocked the putter",
     detail,
-    "A shoulder-driven stroke is the most repeatable way to control face angle and speed.",
+    `${pct}% of the putter's swing came from your shoulders rocking, the most repeatable way to move it.`,
     moments.backstroke,
     "shoulders",
-  );
+  ));
 }
 
 // ---------- Down the line ----------
@@ -440,16 +560,24 @@ function strokePath(c: Context): Finding | null {
   const worst = Math.max(Math.abs(back), Math.abs(through));
   const dir = (v: number) => (Math.abs(v) < 0.5 ? "straight" : v > 0 ? `${inches(v)} inside` : `${inches(-v)} outside`);
   const detail = `Your hands went ${dir(back)} at the end of the backstroke and ${dir(through)} at the finish.`;
+  const rating: Rating = {
+    phase: "forward",
+    label: "your stroke path",
+    metric: "strokePath",
+    visibility: visibilityOf([setup], [...near, ...FEET]),
+    value: worst,
+    thresholds: [limits.minor],
+  };
   const g = grade(worst, limits);
   if (!g) {
-    return strength(
+    return rate(rating, strength(
       "path",
-      "Your stroke went straight back and through",
+      "Stroke went straight back and through",
       detail,
-      "A straight or gently arcing path keeps the putter face square through impact, so putts start on your line.",
+      "Your hands stayed on line both ways, so the putter face could stay square to the path.",
       moments.finish,
       "handPath",
-    );
+    ));
   }
   const crossing = Math.sign(back) !== Math.sign(through) && Math.min(Math.abs(back), Math.abs(through)) > limits.minor / 2;
   const [title, meaning] =
@@ -460,7 +588,7 @@ function strokePath(c: Context): Finding | null {
         : back > 0 || through > 0
           ? ["Your stroke swings on a big arc", "A big arc opens the face going back and closes it through. Unless the timing is perfect, putts start off line."]
           : ["Your hands move out toward the ball during the stroke", "Pushing the hands out changes the putter's lie and face angle, so putts start off line."];
-  return withIssue("putt-path", issue("path", g, worst / limits.minor, title, detail, meaning, Math.abs(back) >= Math.abs(through) ? moments.backstroke : moments.finish, "handPath"));
+  return rate(rating, withIssue("putt-path", issue("path", g, worst / limits.minor, title, detail, meaning, Math.abs(back) >= Math.abs(through) ? moments.backstroke : moments.finish, "handPath")));
 }
 
 /** Eyes over the ball at setup. */
@@ -472,40 +600,48 @@ function eyesOverBall(c: Context): Finding | null {
   const outside = ((eyes.x - ball.x) * ballSide(c)) / pxPerInch;
   const where = Math.abs(outside) < 0.5 ? "right over the ball" : outside > 0 ? `${inches(outside)} outside the ball` : `${inches(-outside)} inside the ball`;
   const detail = `At setup your eyes were ${where}.`;
+  const rating: Rating = {
+    phase: "setup",
+    label: "your eye line",
+    metric: "eyeLine",
+    visibility: visibilityOf([setup], [LM.leftEye, LM.rightEye]),
+    value: outside,
+    thresholds: [-PUTT.eyesInsideBallInches.minor, PUTT.eyesOutsideBallInches.minor],
+  };
   const inside = grade(-outside, PUTT.eyesInsideBallInches);
   const beyond = grade(outside, PUTT.eyesOutsideBallInches);
   if (beyond) {
-    return withIssue("eye-line", issue(
+    return rate(rating, withIssue("eye-line", issue(
       "eyes",
       beyond,
       outside / PUTT.eyesOutsideBallInches.minor,
-      "Your eyes are outside the ball",
+      `Eyes ${inchesShort(outside)} outside the ball`,
       detail,
-      "With your eyes beyond the ball, you're reaching and crowding the putt, which tends to push putts and makes the line look wrong.",
+      `With your eyes ${inches(outside)} beyond the ball you're crowding it: the hands get pushed out and the line looks further right than it is.`,
       moments.setup,
       "eyeLine",
-    ));
+    )));
   }
   if (inside) {
-    return withIssue("eye-line", issue(
+    return rate(rating, withIssue("eye-line", issue(
       "eyes",
       inside,
       -outside / PUTT.eyesInsideBallInches.minor,
-      "Your eyes are well inside the ball",
+      `Eyes ${inchesShort(-outside)} inside the ball`,
       detail,
-      "With your eyes inside the ball, the line looks like it points left of where it really goes, and putts tend to be pulled. Set up so your eyes are over the ball or just inside it.",
+      `From ${inches(-outside)} inside, the line you see points left of where the putter is really aimed (for a right-hander), so you either aim off or pull it back on line.`,
       moments.setup,
       "eyeLine",
-    ));
+    )));
   }
-  return strength(
+  return rate(rating, strength(
     "eyes",
-    "Your eyes are over the ball",
+    "Eyes over the ball",
     detail,
-    "Eyes over (or just inside) the ball let you see the true line, so putts start where you aim.",
+    "With your eyes over the ball, the line you see is the line the putter is aimed on.",
     moments.setup,
     "eyeLine",
-  );
+  ));
 }
 
 // ---------- Helpers ----------

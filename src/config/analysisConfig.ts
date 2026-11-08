@@ -20,10 +20,138 @@ export const ANALYSIS_CONFIG = {
   // points it uses is at least this high.
   minConfidence: 0.6,
 
+  // ── Cleaning the pose data ────────────────────────────────────────────────
+  smoothing: {
+    // Frames where MediaPipe's average confidence in the shoulders and hips is
+    // below this are dropped (the golfer was blurred, hidden or mistaken).
+    minFrameVisibility: 0.5,
+    // Each landmark is averaged with its neighbors within this many seconds
+    // either side (weighted toward the middle frame and by confidence). Small,
+    // so the fast downswing isn't blurred: it only reaches the close-look
+    // frames (60 per second), not the quick first pass (15 per second).
+    windowSeconds: 0.035,
+  },
+  // Positions at each key moment are averaged over this many seconds either
+  // side, instead of trusting a single frame. Shorter where the body moves fast.
+  keyPoseWindow: { address: 0.1, top: 0.04, impact: 0.02, finish: 0.1 },
+
+  // ── Confidence shown on each result ───────────────────────────────────────
+  // A result's confidence is the lowest of four scores (0–1):
+  // - how clearly MediaPipe saw the body points it uses (visibility),
+  // - how big the golfer is in the frame (pixels per inch),
+  // - how reliable this measurement is from video (`reliability`, from the
+  //   audit: how much it moved between runs and how well it matched the frames),
+  // - how far the reading is from the line between two verdicts, compared
+  //   with that measurement's typical run-to-run wobble (`noise`). A reading
+  //   right on a threshold could easily have gone the other way.
+  confidence: {
+    levels: { high: 0.75, medium: 0.5, low: 0.3 }, // below `low` the result is hidden
+    visibility: { from: 0.5, full: 0.85 },
+    pixelsPerInch: { from: 4, full: 8 },
+    // The share of the score a reading right on a threshold keeps.
+    onThreshold: 0.35,
+    reliability: {
+      tempo: 0.85,
+      posture: 0.95,
+      takeaway: 0.75,
+      leadArm: 0.6,
+      plane: 0.8,
+      earlyExtension: 0.9,
+      hipDepth: 0.65, // hip points sit under the arms at impact: 2 vs 3 in across runs
+      headHeight: 0.85,
+      trailKnee: 0.85,
+      hipSway: 0.7,
+      headLateral: 0.65,
+      weightShift: 0.85,
+      reverseTilt: 0.85,
+      shoulderTurn: 0.45, // depth estimate: 59–85° on the same swing across runs
+      sequencing: 0.6,
+      finish: 0.8,
+      chickenWing: 0.75,
+      puttTempo: 0.9,
+      strokeLength: 0.9,
+      puttHead: 0.85,
+      puttLowerBody: 0.85,
+      triangle: 0.8,
+      shoulderRock: 0.8,
+      acceleration: 0.75,
+      strokePath: 0.6, // down the line, perspective adds ~1 in
+      eyeLine: 0.85,
+    },
+    // Typical run-to-run wobble of each reading, in its own units.
+    noise: {
+      tempo: 0.25,
+      posture: 2,
+      takeaway: 1.5,
+      leadArm: 8,
+      plane: 1,
+      earlyExtension: 1.5, // degrees of spine angle
+      hipDepth: 0.75,
+      headHeight: 0.75,
+      trailKnee: 4,
+      hipSway: 0.75,
+      headLateral: 1,
+      weightShift: 0.75,
+      reverseTilt: 2,
+      shoulderTurn: 8,
+      sequencing: 0.03, // seconds
+      finish: 0.05,
+      chickenWing: 6,
+      puttTempo: 0.15,
+      strokeLength: 0.1,
+      puttHead: 0.5,
+      puttLowerBody: 0.4,
+      triangle: 1.5,
+      shoulderRock: 0.08,
+      acceleration: 0.06,
+      strokePath: 0.75,
+      eyeLine: 0.5,
+    },
+  },
+
   fullSwing: {
     // Tempo = backswing time ÷ downswing time. Inside [goodMin, goodMax] is a
     // strength; outside [okMin, okMax] is a major issue; in between is minor.
+    // The 3-to-1 standard is timed on the club, but we can only see the hands,
+    // and the club keeps going back after the hands stop: checked frame by
+    // frame on two swings, the club reached the top ~0.06 s later. So the top
+    // is moved this much later for tempo.
     tempo: { ideal: 3, goodMin: 2.5, goodMax: 3.5, okMin: 2, okMax: 4.5 },
+    clubTopLagSeconds: 0.06,
+
+    // The phases of the swing, for grouping the results. The transition is the
+    // first part of the downswing (this share of the time from top to impact).
+    transitionShare: 0.35,
+    // Finish: after impact the hands rise and stop. They count as stopped below
+    // this speed (torso lengths per second).
+    finishStillSpeed: 0.6,
+
+    // Sequencing (face on): when the hips start toward the target and when the
+    // arms start the club down, after the top. A movement starts when it's
+    // faster than `startSpeed` / `handsStartSpeed` (torso lengths per second).
+    // The hips should go first: if the arms start more than `minor` / `major`
+    // seconds BEFORE the hips, it's flagged. The two are timed with different
+    // speeds, so there's some slack; on the three face on test swings the
+    // arms led by -0.02 to +0.03 s.
+    sequencing: { startSpeed: 0.5, handsStartSpeed: 1.2, minor: 0.05, major: 0.1 },
+
+    // Finish and balance (both angles), judged over `holdSeconds` after the
+    // finish (skipped if the video ends sooner than `minSeconds` after it).
+    // - Hold: the head and hips should move sideways less than `holdTorso`
+    //   torso lengths (more = a stumble or a step). Only sideways: golfers
+    //   naturally stand up and relax out of the finish after half a second
+    //   (checked on IMG_6220), which isn't losing balance.
+    // - Face on: hips over the lead foot. 0 = over the trail foot, 1 = over the
+    //   lead foot; below `weightForward.minor` / `.major` it's flagged.
+    finish: {
+      holdSeconds: 0.5,
+      // The positions at the start and end of the hold are each averaged over
+      // this long, so frame-to-frame jitter doesn't count as movement.
+      edgeSeconds: 0.12,
+      minSeconds: 0.4,
+      holdTorso: { minor: 0.15, major: 0.3 } as Limits,
+      weightForward: { minor: 0.7, major: 0.5 },
+    },
 
     downTheLine: {
       // Start of the downswing (first 40%): how far the hands move out toward
@@ -52,6 +180,9 @@ export const ANALYSIS_CONFIG = {
       hipDepthLossInches: { minor: 2, major: 4 } as Limits,
       // Head dropping down or lifting up during the swing, inches.
       headDipLiftInches: { minor: 2, major: 4 } as Limits,
+      // Trail knee straightening in the backswing: degrees of flex lost from
+      // address to the top (the trail leg is the one nearer the camera).
+      trailKneeLossDegrees: { minor: 12, major: 20 } as Limits,
     },
     faceOn: {
       // Trail hip drifting away from the target in the backswing, inches.
@@ -73,6 +204,9 @@ export const ANALYSIS_CONFIG = {
       // Estimated shoulder turn at the top, degrees. Below `minor` = minor issue,
       // below `major` = major issue.
       shoulderTurnDegrees: { minor: 75, major: 60 },
+      // Lead arm just after impact (hands back at hip height): degrees of bend
+      // at the lead elbow. Bending it ("chicken wing") is flagged.
+      chickenWingDegrees: { minor: 30, major: 45 } as Limits,
     },
   },
 
@@ -125,5 +259,13 @@ export const ANALYSIS_CONFIG = {
     // (between the ball and the feet) or outside it, at setup.
     eyesInsideBallInches: { minor: 2, major: 4 } as Limits,
     eyesOutsideBallInches: { minor: 0.75, major: 2 } as Limits,
+
+    // Face On: accelerating through impact. The hands' speed at impact as a
+    // share of their top speed in the forward stroke; a stroke that peaks
+    // before impact and arrives slower is decelerating. Below `minor` /
+    // `major` it's flagged (only when the top speed came more than
+    // `peakBeforeSeconds` before impact).
+    impactSpeedShare: { minor: 0.88, major: 0.75 },
+    peakBeforeSeconds: 0.03,
   },
 } as const;

@@ -28,6 +28,10 @@ export type IssueKey =
   | "weight-shift"
   | "reverse-tilt"
   | "shoulder-turn"
+  | "trail-knee"
+  | "sequencing"
+  | "chicken-wing"
+  | "finish-balance"
   // Putting
   | "putt-tempo"
   | "putt-stillness"
@@ -35,7 +39,8 @@ export type IssueKey =
   | "putt-length"
   | "shoulder-rock"
   | "putt-path"
-  | "eye-line";
+  | "eye-line"
+  | "putt-decel";
 
 export type Drill = {
   name: string;
@@ -614,4 +619,148 @@ export const IMPROVEMENTS: Record<IssueKey, Improvement> = {
     ],
     aids: [puttingMirror],
   },
+  "trail-knee": {
+    issue: "Trail leg straightening in the backswing",
+    drills: [
+      {
+        name: "Ball under the trail foot",
+        how: "Put a golf ball under the outside edge of your trail foot. Make backswings keeping your weight on the inside of that foot, so the knee stays flexed.",
+        reps: "3 sets of 10 slow backswings",
+        minutes: 10,
+        youtubeId: "",
+        searchQuery: "golf drill keep trail knee flexed backswing",
+      },
+      {
+        name: "Wall behind the trail knee",
+        how: "Stand with a chair or wall just behind your trail knee at address and turn to the top without your knee pushing back into it.",
+        reps: "20 practice backswings",
+        minutes: 10,
+        youtubeId: "",
+        searchQuery: "golf drill trail knee flex chair",
+      },
+    ],
+    aids: [alignmentSticks],
+  },
+  sequencing: {
+    issue: "Upper body starting the downswing",
+    drills: [
+      {
+        name: "Step-through drill",
+        how: "Start with your feet together, step toward the target with your lead foot as you reach the top, and let the club fall as the foot lands.",
+        reps: "3 sets of 10 swings, then hit 10 balls",
+        minutes: 15,
+        youtubeId: "",
+        searchQuery: "golf step through drill downswing sequence",
+      },
+      {
+        name: "Pump drill",
+        how: "Swing to the top, bump your hips toward the target while your hands drop halfway down, go back to the top, then swing through.",
+        reps: "3 sets of 8 swings",
+        minutes: 10,
+        youtubeId: "",
+        searchQuery: "golf pump drill hips start downswing",
+      },
+    ],
+    aids: [tempoTrainer],
+  },
+  "chicken-wing": {
+    issue: "Lead arm folding after impact (chicken wing)",
+    drills: [
+      {
+        name: "Towel under the lead arm",
+        how: "Tuck a towel under your lead armpit and hit half swings, keeping the towel there until your hands pass your lead hip.",
+        reps: "3 sets of 10 half swings",
+        minutes: 10,
+        youtubeId: "",
+        searchQuery: "golf chicken wing drill towel under arm",
+      },
+      {
+        name: "Extend to the target",
+        how: "Hit punch shots and freeze at hip height after impact with both arms straight and the club pointing at the target.",
+        reps: "20 punch shots",
+        minutes: 10,
+        youtubeId: "",
+        searchQuery: "golf extension drill after impact chicken wing",
+      },
+    ],
+    aids: [armBand],
+  },
+  "finish-balance": {
+    issue: "Off-balance finish",
+    drills: [
+      {
+        name: "Hold for three",
+        how: "Hit balls at 70% speed and hold your finish for a count of three, belt buckle facing the target, before you look up.",
+        reps: "20 balls",
+        minutes: 15,
+        youtubeId: "",
+        searchQuery: "golf hold your finish balance drill",
+      },
+      {
+        name: "Feet together swings",
+        how: "Hit short irons with your feet together. You can only stay standing if you swing in balance.",
+        reps: "3 sets of 10 balls",
+        minutes: 15,
+        youtubeId: "",
+        searchQuery: "golf feet together drill balance",
+      },
+    ],
+    aids: [alignmentSticks],
+  },
+  "putt-decel": {
+    issue: "Decelerating putting stroke",
+    drills: [
+      {
+        name: "Tee in front",
+        how: "Push a tee into the green about 6 inches in front of the ball and make sure the putter head passes over it on every putt.",
+        reps: "3 sets of 10 putts",
+        minutes: 15,
+        youtubeId: "",
+        searchQuery: "putting drill accelerate tee in front of ball",
+      },
+      {
+        name: "Short back, long through",
+        how: "Putt to a hole 10 feet away with a backstroke half as long as feels natural, so you have to swing through to get it there.",
+        reps: "20 putts",
+        minutes: 10,
+        youtubeId: "",
+        searchQuery: "putting drill short backstroke accelerate",
+      },
+    ],
+    aids: [metronome],
+  },
+};
+
+/**
+ * One simple feel or cue per issue, shown on the "Focus on this first" card.
+ * Short enough to remember over the ball.
+ */
+export const CUES: Record<IssueKey, string> = {
+  "tempo-rushed": "Count \"one-two-three\" going back and \"four\" coming down.",
+  "tempo-slow": "Let the club fall from the top, then speed it up so it's fastest after the ball.",
+  "over-the-top": "From the top, feel your hands drop straight down toward your trail pocket before you turn.",
+  "under-plane": "Feel the club shaft stay over your trail forearm as you start down, not behind your back.",
+  "takeaway-inside": "Keep the club head outside your hands until the shaft is parallel to the ground.",
+  "takeaway-outside": "Turn your chest to start the club back so the hands stay close to your trail thigh.",
+  "lead-arm": "Make the backswing a little shorter and keep your lead arm long, like you're pushing the club away.",
+  posture: "Bow from the hips until your arms hang straight under your shoulders, then soften the knees.",
+  "early-extension": "Keep your back pocket touching an imaginary wall behind you until after impact.",
+  "head-height": "Keep your eyes at the same height from address until the ball is gone.",
+  "head-lateral": "Keep your nose behind the ball until your hands pass your lead thigh.",
+  "hip-sway": "Turn your trail pocket behind you instead of sliding it away from the target.",
+  "weight-shift": "Start the downswing by pressing your lead foot into the ground.",
+  "reverse-tilt": "At the top, feel your sternum over your trail knee.",
+  "shoulder-turn": "Turn until your back faces the target before you lift your arms any higher.",
+  "trail-knee": "Keep your trail knee pointing at the ball until the top of the backswing.",
+  sequencing: "Bump your lead hip toward the target first, then let the arms fall.",
+  "chicken-wing": "Feel both arms reaching down the target line after impact, like a handshake with the target.",
+  "finish-balance": "Swing at 80% and hold your finish until the ball lands.",
+  "putt-tempo": "Say \"one\" as you start back and \"two\" as you strike.",
+  "putt-stillness": "Keep your eyes on the spot where the ball was until you hear it drop.",
+  "wrist-breakdown": "Feel your shoulders rock the putter while your arms and wrists stay quiet.",
+  "putt-length": "Make the follow-through at least as long as the backstroke.",
+  "shoulder-rock": "Rock your shoulders like a seesaw: lead shoulder down going back, up going through.",
+  "putt-path": "Swing the putter head along a straight track a putter-width wide.",
+  "eye-line": "Drop a ball from your eyes: it should land on the ball you're putting, or just inside it.",
+  "putt-decel": "Make the putter fastest just after the ball.",
 };
