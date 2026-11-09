@@ -32,6 +32,60 @@ export type Finding = {
   confidence?: Confidence;
   confidenceScore?: number;
   related?: string[]; // sentences linking this result to others
+  // Which coach lines fit this result, and the numbers they plug in
+  // (see src/data/coachLines.ts).
+  line?: { key: LineKey; n: Record<string, string> };
+};
+
+// One key per kind of result the coach has lines for.
+export type LineKey =
+  // Full swing, both angles
+  | "tempo-good" | "tempo-rushed" | "tempo-slow"
+  | "finish-good" | "finish-back-foot" | "finish-wobble"
+  // Full swing, down the line
+  | "posture-good" | "posture-upright" | "posture-bent" | "posture-straight-knees" | "posture-squat"
+  | "takeaway-good" | "takeaway-inside" | "takeaway-outside"
+  | "trail-knee-good" | "trail-knee"
+  | "lead-arm-good" | "lead-arm"
+  | "plane-good" | "over-the-top" | "under-plane"
+  | "early-ext-good" | "early-ext-both" | "early-ext-spine" | "early-ext-hips"
+  | "head-height-good" | "head-dip" | "head-rise"
+  // Full swing, face on
+  | "hip-sway-good" | "hip-sway"
+  | "shoulder-turn-good" | "shoulder-turn-short"
+  | "reverse-tilt-good" | "reverse-tilt"
+  | "sequencing-good" | "sequencing"
+  | "weight-good" | "weight-reverse" | "weight-back"
+  | "head-centered" | "head-slide" | "head-hang"
+  | "release-good" | "chicken-wing"
+  // Putt
+  | "putt-tempo-good" | "putt-tempo-quick" | "putt-tempo-drag"
+  | "putt-length-good" | "putt-length-short" | "putt-length-jab"
+  | "putt-accel-good" | "putt-decel"
+  | "putt-head-good" | "putt-head"
+  | "putt-lower-good" | "putt-lower"
+  | "triangle-good" | "putt-wrist" | "putt-triangle"
+  | "shoulders-good" | "shoulders-arms"
+  | "path-good" | "path-cut" | "path-in-out" | "path-arc" | "path-out"
+  | "eyes-good" | "eyes-outside" | "eyes-inside";
+
+/** Attach the coach's line key and numbers to a result. */
+export function said(key: LineKey, n: Record<string, string>, finding: Finding): Finding {
+  return { ...finding, line: { key, n } };
+}
+
+/** Numbers the way a coach says them out loud. */
+export const spoken = {
+  deg: (v: number) => `${Math.round(Math.abs(v))}`,
+  sec: (v: number) => v.toFixed(2),
+  pct: (share: number) => `${Math.round(share * 100)}`,
+  ms: (seconds: number) => `${Math.round(Math.abs(seconds) * 1000)}`,
+  inches(v: number) {
+    const a = Math.abs(v);
+    if (a < 0.75) return "less than an inch";
+    const r = Math.round(a * 2) / 2;
+    return r === 1 ? "an inch" : `${r} inches`;
+  },
 };
 
 /** Grade a "bigger is worse" value: null = fine, else the severity. */

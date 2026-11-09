@@ -17,6 +17,8 @@ import {
   type Finding,
   type Rating,
   type Severity,
+  said,
+  spoken,
 } from "./findings";
 
 type Input = {
@@ -161,18 +163,18 @@ function tempo(c: Context): Finding | null {
   };
   const detail = `Backswing ${back.toFixed(2)}s, downswing ${down.toFixed(2)}s: ${r} to 1. Tour players average about ${t.ideal} to 1.`;
   if (ratio >= t.goodMin && ratio <= t.goodMax) {
-    return rate(rating, strength(
+    return said("tempo-good", { ratio: r, back: spoken.sec(back), down: spoken.sec(down) }, rate(rating, strength(
       "tempo",
       `Smooth tempo: ${r} to 1`,
       detail,
       `Your backswing takes ${r} times as long as your downswing, right in the ${t.goodMin}–${t.goodMax} range where the body has time to load and then lead the arms down.`,
       moments.top,
-    ));
+    )));
   }
   const severity: Severity = ratio < t.okMin || ratio > t.okMax ? "major" : "minor";
   if (ratio < t.goodMin) {
     const extra = Math.max(0.05, t.goodMin * down - back);
-    return rate(rating, withIssue("tempo-rushed", issue(
+    return said("tempo-rushed", { ratio: r, back: spoken.sec(back), down: spoken.sec(down), extra: spoken.sec(extra) }, rate(rating, withIssue("tempo-rushed", issue(
       "tempo",
       severity,
       t.goodMin / ratio,
@@ -180,9 +182,9 @@ function tempo(c: Context): Finding | null {
       detail,
       `At ${back.toFixed(2)}s your backswing is only ${r} times your downswing. Taking about ${extra.toFixed(2)}s longer to reach the top would give your lower body time to start the downswing before your arms do.`,
       moments.top,
-    )));
+    ))));
   }
-  return rate(rating, withIssue("tempo-slow", issue(
+  return said("tempo-slow", { ratio: r, back: spoken.sec(back), down: spoken.sec(down) }, rate(rating, withIssue("tempo-slow", issue(
     "tempo",
     severity,
     ratio / t.goodMax,
@@ -190,7 +192,7 @@ function tempo(c: Context): Finding | null {
     detail,
     `Your downswing takes ${down.toFixed(2)}s, long for a ${back.toFixed(2)}s backswing. A downswing that eases into the ball loses club speed and tends to leave the face open.`,
     moments.top,
-  )));
+  ))));
 }
 
 // ---------- Down the line ----------
@@ -208,10 +210,10 @@ function posture(c: Context): Finding | null {
   const K = DTL.kneeFlex;
   const detail = `Spine tilted ${Math.round(tilt)}° forward (good: ${T.min}–${T.max}°), knees flexed ${Math.round(flex)}° (good: ${K.min}–${K.max}°).`;
   const problems = [
-    { off: T.min - tilt, title: `Too upright at address (spine ${Math.round(tilt)}°)`, meaning: `At ${Math.round(tilt)}° your chest points out more than down at the ball, so your arms have to swing around you instead of up and down. That flattens the swing and tends to produce thin shots.` },
-    { off: tilt - T.max, title: `Bent over too far at address (spine ${Math.round(tilt)}°)`, meaning: `Bending ${Math.round(tilt)}° from the hips leaves little room to turn, and it's hard to hold that angle through the ball, which is how fat shots happen.` },
-    { off: K.min - flex, title: `Knees nearly straight at address (${Math.round(flex)}°)`, meaning: `With only ${Math.round(flex)}° of knee flex your legs can't support a turn, so balance and contact suffer.` },
-    { off: flex - K.max, title: `Squatting at address (${Math.round(flex)}° of knee flex)`, meaning: `${Math.round(flex)}° of knee flex sinks your hips, which blocks your hip turn and steepens the swing. Stand ${Math.round(flex - K.max)}° taller in the knees.` },
+    { off: T.min - tilt, key: "posture-upright" as const, title: `Too upright at address (spine ${Math.round(tilt)}°)`, meaning: `At ${Math.round(tilt)}° your chest points out more than down at the ball, so your arms have to swing around you instead of up and down. That flattens the swing and tends to produce thin shots.` },
+    { off: tilt - T.max, key: "posture-bent" as const, title: `Bent over too far at address (spine ${Math.round(tilt)}°)`, meaning: `Bending ${Math.round(tilt)}° from the hips leaves little room to turn, and it's hard to hold that angle through the ball, which is how fat shots happen.` },
+    { off: K.min - flex, key: "posture-straight-knees" as const, title: `Knees nearly straight at address (${Math.round(flex)}°)`, meaning: `With only ${Math.round(flex)}° of knee flex your legs can't support a turn, so balance and contact suffer.` },
+    { off: flex - K.max, key: "posture-squat" as const, title: `Squatting at address (${Math.round(flex)}° of knee flex)`, meaning: `${Math.round(flex)}° of knee flex sinks your hips, which blocks your hip turn and steepens the swing. Stand ${Math.round(flex - K.max)}° taller in the knees.` },
   ].filter((p) => p.off > 0);
   const rating: Rating = {
     phase: "setup",
@@ -223,17 +225,17 @@ function posture(c: Context): Finding | null {
   };
   if (problems.length === 0) {
     const room = Math.min(tilt - T.min, T.max - tilt, flex - K.min, K.max - flex);
-    return rate({ ...rating, value: room, thresholds: [0] }, strength(
+    return said("posture-good", { tilt: spoken.deg(tilt), flex: spoken.deg(flex) }, rate({ ...rating, value: room, thresholds: [0] }, strength(
       "posture",
       "Athletic posture at address",
       detail,
       `${Math.round(tilt)}° of forward tilt with ${Math.round(flex)}° of knee flex puts your arms hanging under your shoulders, so you can turn without standing up.`,
       moments.address,
       "spine",
-    ));
+    )));
   }
   const worst = problems.sort((a, b) => b.off - a.off)[0];
-  return rate({ ...rating, value: worst.off, thresholds: [0] }, withIssue("posture", issue("posture", worst.off > 8 ? "major" : "minor", 1 + worst.off / 8, worst.title, detail, worst.meaning, moments.address, "spine")));
+  return said(worst.key, { tilt: spoken.deg(tilt), flex: spoken.deg(flex), over: spoken.deg(flex - K.max) }, rate({ ...rating, value: worst.off, thresholds: [0] }, withIssue("posture", issue("posture", worst.off > 8 ? "major" : "minor", 1 + worst.off / 8, worst.title, detail, worst.meaning, moments.address, "spine"))));
 }
 
 function takeaway(c: Context): Finding | null {
@@ -258,7 +260,7 @@ function takeaway(c: Context): Finding | null {
   const inside = grade(-out, DTL.takeawayInsideInches);
   const outside = grade(out, DTL.takeawayOutsideInches);
   if (inside) {
-    return rate(rating, withIssue("takeaway-inside", issue(
+    return said("takeaway-inside", { in: spoken.inches(out) }, rate(rating, withIssue("takeaway-inside", issue(
       "takeaway",
       inside,
       -out / DTL.takeawayInsideInches.minor,
@@ -267,10 +269,10 @@ function takeaway(c: Context): Finding | null {
       `Pulling the hands ${inches(-out)} behind you by hip height lays the club flat early. From there the arms usually have to lift and loop it back over the top on the way down.`,
       frame.time,
       "plane",
-    )));
+    ))));
   }
   if (outside) {
-    return rate(rating, withIssue("takeaway-outside", issue(
+    return said("takeaway-outside", { in: spoken.inches(out) }, rate(rating, withIssue("takeaway-outside", issue(
       "takeaway",
       outside,
       out / DTL.takeawayOutsideInches.minor,
@@ -279,9 +281,9 @@ function takeaway(c: Context): Finding | null {
       `Moving the hands ${inches(out)} out toward the ball sets the club steep right away, which makes an out-to-in downswing (pulls and slices) very likely.`,
       frame.time,
       "plane",
-    )));
+    ))));
   }
-  return rate(rating, strength(
+  return said("takeaway-good", { in: spoken.inches(out) }, rate(rating, strength(
     "takeaway",
     "Takeaway on a neutral path",
     detail,
@@ -290,7 +292,7 @@ function takeaway(c: Context): Finding | null {
       : "Your hands moved straight back with your turn, which sets the club on plane from the start.",
     frame.time,
     "plane",
-  ));
+  )));
 }
 
 function trailKnee(c: Context): Finding | null {
@@ -311,7 +313,7 @@ function trailKnee(c: Context): Finding | null {
   };
   const g = grade(loss, DTL.trailKneeLossDegrees);
   if (g) {
-    return rate(rating, withIssue("trail-knee", issue(
+    return said("trail-knee", { before: spoken.deg(before), after: spoken.deg(after), loss: spoken.deg(loss) }, rate(rating, withIssue("trail-knee", issue(
       "trail-knee",
       g,
       loss / DTL.trailKneeLossDegrees.minor,
@@ -320,9 +322,9 @@ function trailKnee(c: Context): Finding | null {
       `Losing ${Math.round(loss)}° of flex in your trail knee lets your hips spin and rise instead of turning against a braced leg, which makes it hard to keep your posture coming down.`,
       moments.top,
       "spine",
-    )));
+    ))));
   }
-  return rate(rating, strength(
+  return said("trail-knee-good", { before: spoken.deg(before), after: spoken.deg(after), loss: spoken.deg(Math.max(loss, 0)) }, rate(rating, strength(
     "trail-knee",
     "Trail knee stayed flexed",
     detail,
@@ -331,7 +333,7 @@ function trailKnee(c: Context): Finding | null {
       : `Your trail knee lost only ${Math.round(loss)}° of flex, so your hips had something to turn against.`,
     moments.top,
     "spine",
-  ));
+  )));
 }
 
 function leadArmAtTop(c: Context): Finding | null {
@@ -354,7 +356,7 @@ function leadArmAtTop(c: Context): Finding | null {
   };
   const g = grade(angle, DTL.leadArmBendDegrees);
   if (g) {
-    return rate(rating, withIssue("lead-arm", issue(
+    return said("lead-arm", { angle: spoken.deg(angle) }, rate(rating, withIssue("lead-arm", issue(
       "lead-arm",
       g,
       angle / DTL.leadArmBendDegrees.minor,
@@ -362,9 +364,9 @@ function leadArmAtTop(c: Context): Finding | null {
       detail,
       `A ${Math.round(angle)}° bend shortens your swing radius, and the arm has to straighten again by impact, a timing move that shows up as thin and fat shots.`,
       moments.top,
-    )));
+    ))));
   }
-  return rate(rating, strength("lead-arm", "Wide lead arm at the top", detail, `Only ${Math.round(angle)}° of bend keeps your swing arc wide.`, moments.top));
+  return said("lead-arm-good", { angle: spoken.deg(angle) }, rate(rating, strength("lead-arm", "Wide lead arm at the top", detail, `Only ${Math.round(angle)}° of bend keeps your swing arc wide.`, moments.top)));
 }
 
 function plane(c: Context): Finding | null {
@@ -394,7 +396,7 @@ function plane(c: Context): Finding | null {
   const over = grade(worst.out, DTL.overTheTopInches);
   const under = grade(worst.inward, DTL.underPlaneInches);
   if (over) {
-    return rate({ ...rating, value: worst.out, thresholds: [DTL.overTheTopInches.minor] }, withIssue("over-the-top", issue(
+    return said("over-the-top", { in: spoken.inches(worst.out) }, rate({ ...rating, value: worst.out, thresholds: [DTL.overTheTopInches.minor] }, withIssue("over-the-top", issue(
       "plane",
       over,
       worst.out / DTL.overTheTopInches.minor,
@@ -403,10 +405,10 @@ function plane(c: Context): Finding | null {
       `Instead of dropping, your hands push ${inches(worst.out)} toward the ball as you start down, which puts the club above the plane and swings it across the ball from out to in: the classic pull or slice.`,
       worst.time,
       "plane",
-    )));
+    ))));
   }
   if (under) {
-    return rate({ ...rating, value: worst.inward, thresholds: [DTL.underPlaneInches.minor] }, withIssue("under-plane", issue(
+    return said("under-plane", { in: spoken.inches(worst.inward) }, rate({ ...rating, value: worst.inward, thresholds: [DTL.underPlaneInches.minor] }, withIssue("under-plane", issue(
       "plane",
       under,
       worst.inward / DTL.underPlaneInches.minor,
@@ -415,16 +417,16 @@ function plane(c: Context): Finding | null {
       `Your hands fall ${inches(worst.inward)} in behind your body to start down, so the club comes from too far inside and the face is hard to square: pushes, hooks and heavy shots.`,
       worst.time,
       "plane",
-    )));
+    ))));
   }
-  return rate(rating, strength(
+  return said("plane-good", { drop: spoken.inches(Math.max(drop, 0)) }, rate(rating, strength(
     "plane",
     "Downswing started on plane",
     detail,
     `Your hands dropped ${inches(Math.max(drop, 0))} without drifting out or behind you, which keeps the club on the plane line coming down.`,
     worst.time,
     "plane",
-  ));
+  )));
 }
 
 /**
@@ -450,14 +452,14 @@ function earlyExtension(c: Context): Finding | null {
     // Both readings are fine; the one closer to its limit sets the confidence.
     const spineRoom = (DTL.spineAngleLossDegrees.minor - loss) / CFG.confidence.noise.earlyExtension;
     const hipRoom = (DTL.hipDepthLossInches.minor - hips) / CFG.confidence.noise.hipDepth;
-    return rate(spineRoom < hipRoom ? spineRating : hipRating, strength(
+    return said("early-ext-good", { before: spoken.deg(before), after: spoken.deg(after) }, rate(spineRoom < hipRoom ? spineRating : hipRating, strength(
       "early-extension",
       "Held your posture through impact",
       detail,
       `You kept ${Math.round(after)}° of your ${Math.round(before)}° address tilt and your hips stayed back, so your arms had room to swing through.`,
       moments.impact,
       "spine",
-    ));
+    )));
   }
   const severity: Severity = spineGrade === "major" || hipGrade === "major" ? "major" : "minor";
   const parts = [
@@ -473,7 +475,7 @@ function earlyExtension(c: Context): Finding | null {
     " That takes away the room your arms need, so the club either comes in steep or you have to flip your hands to find the ball: thin, toe and blocked shots.";
   // Rate with whichever sign is further past its limit.
   const useSpine = spineGrade && (!hipGrade || loss / DTL.spineAngleLossDegrees.minor >= hips / DTL.hipDepthLossInches.minor);
-  return rate(useSpine ? spineRating : hipRating, withIssue("early-extension", issue(
+  return said(spineGrade && hipGrade ? "early-ext-both" : spineGrade ? "early-ext-spine" : "early-ext-hips", { deg: spoken.deg(loss), in: spoken.inches(hips), before: spoken.deg(before), after: spoken.deg(after) }, rate(useSpine ? spineRating : hipRating, withIssue("early-extension", issue(
     "early-extension",
     severity,
     Math.max(loss / DTL.spineAngleLossDegrees.minor, hips / DTL.hipDepthLossInches.minor),
@@ -482,7 +484,7 @@ function earlyExtension(c: Context): Finding | null {
     meaning,
     moments.impact,
     "spine",
-  )));
+  ))));
 }
 
 function headHeight(c: Context): Finding | null {
@@ -508,7 +510,7 @@ function headHeight(c: Context): Finding | null {
   };
   const g = grade(worst, DTL.headDipLiftInches);
   if (g && dip.value >= lift) {
-    return rate(rating, withIssue("head-height", issue(
+    return said("head-dip", { in: spoken.inches(dip.value) }, rate(rating, withIssue("head-height", issue(
       "head-height",
       g,
       dip.value / DTL.headDipLiftInches.minor,
@@ -517,10 +519,10 @@ function headHeight(c: Context): Finding | null {
       `Sinking ${inches(dip.value)} moves the bottom of your swing arc down by about the same amount, so the club meets the ground before the ball.`,
       dip.time,
       "head",
-    )));
+    ))));
   }
   if (g) {
-    return rate(rating, withIssue("head-height", issue(
+    return said("head-rise", { in: spoken.inches(lift) }, rate(rating, withIssue("head-height", issue(
       "head-height",
       g,
       lift / DTL.headDipLiftInches.minor,
@@ -529,16 +531,16 @@ function headHeight(c: Context): Finding | null {
       `Coming up ${inches(lift)} lifts the bottom of your arc, so the leading edge catches the ball's equator: thin and topped shots.`,
       moments.impact,
       "head",
-    )));
+    ))));
   }
-  return rate(rating, strength(
+  return said("head-height-good", { in: spoken.inches(Math.max(worst, 0)) }, rate(rating, strength(
     "head-height",
     `Head height within ${inchesShort(Math.max(worst, 1))}`,
     detail,
     "Your head stayed level enough that the bottom of your swing arc returned to where it started.",
     moments.impact,
     "head",
-  ));
+  )));
 }
 
 // ---------- Face on ----------
@@ -563,7 +565,7 @@ function hipSway(c: Context): Finding | null {
   };
   const g = grade(worst.sway, FO.hipSwayInches);
   if (g) {
-    return rate(rating, withIssue("hip-sway", issue(
+    return said("hip-sway", { in: spoken.inches(worst.sway) }, rate(rating, withIssue("hip-sway", issue(
       "hips",
       g,
       worst.sway / FO.hipSwayInches.minor,
@@ -572,16 +574,16 @@ function hipSway(c: Context): Finding | null {
       `Sliding ${inches(worst.sway - 1)} past the turn moves your swing center off the ball, and it has to slide all the way back to strike it on time: blocks if it doesn't, hooks if the hands flip to save it.`,
       worst.time,
       "hips",
-    )));
+    ))));
   }
-  return rate(rating, strength(
+  return said("hip-sway-good", { in: spoken.inches(worst.sway) }, rate(rating, strength(
     "hips",
     "Hips turned without a real sway",
     detail,
     "Your trail hip stayed inside the hip line while it turned, so your swing center stayed over the ball.",
     worst.time,
     "hips",
-  ));
+  )));
 }
 
 function shoulderTurn(c: Context): Finding | null {
@@ -600,7 +602,7 @@ function shoulderTurn(c: Context): Finding | null {
     thresholds: [t.minor],
   };
   if (turn < t.minor) {
-    return rate(rating, withIssue("shoulder-turn", issue(
+    return said("shoulder-turn-short", { deg: spoken.deg(turn), short: spoken.deg(t.minor - turn) }, rate(rating, withIssue("shoulder-turn", issue(
       "shoulder-turn",
       turn < t.major ? "major" : "minor",
       t.minor / Math.max(turn, 1),
@@ -608,15 +610,15 @@ function shoulderTurn(c: Context): Finding | null {
       detail,
       `About ${Math.round(t.minor - turn)}° short of a full turn, so the arms have to supply the length of the swing, and arms-led swings tend to come over the top.`,
       moments.top,
-    )));
+    ))));
   }
-  return rate(rating, strength(
+  return said("shoulder-turn-good", { deg: spoken.deg(turn) }, rate(rating, strength(
     "shoulder-turn",
     `Full shoulder turn (about ${Math.round(turn)}°)`,
     detail,
     "Your back turned fully to the target, so the length of your swing came from your body rather than lifting the arms.",
     moments.top,
-  ));
+  )));
 }
 
 function reverseTilt(c: Context): Finding | null {
@@ -636,7 +638,7 @@ function reverseTilt(c: Context): Finding | null {
   };
   const g = grade(lean, FO.reverseTiltDegrees);
   if (g) {
-    return rate(rating, withIssue("reverse-tilt", issue(
+    return said("reverse-tilt", { deg: spoken.deg(lean) }, rate(rating, withIssue("reverse-tilt", issue(
       "reverse-tilt",
       g,
       lean / FO.reverseTiltDegrees.minor,
@@ -645,16 +647,16 @@ function reverseTilt(c: Context): Finding | null {
       `Leaning ${Math.round(lean)}° toward the target at the top puts your weight on your lead side early, so in the downswing it falls back onto your trail side: fat, thin and weak shots.`,
       moments.top,
       "spine",
-    )));
+    ))));
   }
-  return rate(rating, strength(
+  return said("reverse-tilt-good", { deg: spoken.deg(lean) }, rate(rating, strength(
     "reverse-tilt",
     "Upper body stayed behind the ball at the top",
     detail,
     "With your chest over or behind your trail leg at the top, the downswing can shift toward the target instead of away from it.",
     moments.top,
     "spine",
-  ));
+  )));
 }
 
 /**
@@ -700,7 +702,7 @@ function sequencing(c: Context): Finding | null {
   };
   const g = grade(lead, S);
   if (g) {
-    return rate(rating, withIssue("sequencing", issue(
+    return said("sequencing", { ms: spoken.ms(lead) }, rate(rating, withIssue("sequencing", issue(
       "sequencing",
       g,
       lead / S.minor,
@@ -709,9 +711,9 @@ function sequencing(c: Context): Finding | null {
       `Your arms started down ${Math.round(lead * 1000)} ms before your hips moved toward the target. When the arms fire first, the club gets thrown out over the plane and the lower body has nothing left to add.`,
       handStart,
       "hips",
-    )));
+    ))));
   }
-  return rate(rating, strength(
+  return said("sequencing-good", { ms: spoken.ms(handStart - hipStart) }, rate(rating, strength(
     "sequencing",
     "Hips start the downswing",
     detail,
@@ -720,7 +722,7 @@ function sequencing(c: Context): Finding | null {
       : `Your hips and arms started together (within ${Math.round(lead * 1000)} ms), close to the ideal hips-first order.`,
     hipStart,
     "hips",
-  ));
+  )));
 }
 
 function weightShift(c: Context): Finding | null {
@@ -737,7 +739,7 @@ function weightShift(c: Context): Finding | null {
     thresholds: [FO.weightShiftInches.minor],
   };
   if (shift < FO.weightShiftInches.major) {
-    return rate(rating, withIssue("weight-shift", issue(
+    return said("weight-reverse", { in: spoken.inches(shift) }, rate(rating, withIssue("weight-shift", issue(
       "weight",
       "major",
       2 + Math.abs(shift),
@@ -746,10 +748,10 @@ function weightShift(c: Context): Finding | null {
       `Your hips went ${inches(-shift)} the wrong way by impact, so you're hitting from your trail side and the bottom of the swing comes before the ball.`,
       moments.impact,
       "hips",
-    )));
+    ))));
   }
   if (shift < FO.weightShiftInches.minor) {
-    return rate(rating, withIssue("weight-shift", issue(
+    return said("weight-back", { in: spoken.inches(shift) }, rate(rating, withIssue("weight-shift", issue(
       "weight",
       "minor",
       FO.weightShiftInches.minor / Math.max(shift, 0.1),
@@ -758,16 +760,16 @@ function weightShift(c: Context): Finding | null {
       `Your hips moved just ${inches(shift)} toward the target, not enough to get the low point of the swing in front of the ball.`,
       moments.impact,
       "hips",
-    )));
+    ))));
   }
-  return rate(rating, strength(
+  return said("weight-good", { in: spoken.inches(shift) }, rate(rating, strength(
     "weight",
     `Good weight shift (${inchesShort(shift)} toward the target)`,
     detail,
     `Getting your hips ${inches(shift)} forward by impact puts the low point of your swing ahead of the ball.`,
     moments.impact,
     "hips",
-  ));
+  )));
 }
 
 function headLateral(c: Context): Finding | null {
@@ -786,7 +788,7 @@ function headLateral(c: Context): Finding | null {
   const slide = grade(toward, FO.headSlideTowardTargetInches);
   const drift = grade(-toward, FO.headDriftAwayInches);
   if (slide) {
-    return rate(rating, withIssue("head-lateral", issue(
+    return said("head-slide", { in: spoken.inches(toward) }, rate(rating, withIssue("head-lateral", issue(
       "head",
       slide,
       toward / FO.headSlideTowardTargetInches.minor,
@@ -795,10 +797,10 @@ function headLateral(c: Context): Finding | null {
       `Your head got ${inches(toward)} ahead of where it started, which drags the swing's low point forward and closes off your release: low, weak pulls.`,
       moments.impact,
       "head",
-    )));
+    ))));
   }
   if (drift) {
-    return rate(rating, withIssue("head-lateral", issue(
+    return said("head-hang", { in: spoken.inches(toward) }, rate(rating, withIssue("head-lateral", issue(
       "head",
       drift,
       -toward / FO.headDriftAwayInches.minor,
@@ -807,16 +809,16 @@ function headLateral(c: Context): Finding | null {
       `Your head drifted ${inches(-toward)} away from the target, a sign your weight is falling back: the club bottoms out early, giving fat shots or a flip.`,
       moments.impact,
       "head",
-    )));
+    ))));
   }
-  return rate(rating, strength(
+  return said("head-centered", { in: spoken.inches(toward) }, rate(rating, strength(
     "head",
     "Head stayed centered through impact",
     detail,
     "Your head held its place while your hips moved forward, keeping you behind the ball at impact.",
     moments.impact,
     "head",
-  ));
+  )));
 }
 
 /** Face on: the lead arm should extend after impact, not fold ("chicken wing"). */
@@ -841,7 +843,7 @@ function leadArmRelease(c: Context): Finding | null {
   };
   const g = grade(angle, L);
   if (g) {
-    return rate(rating, withIssue("chicken-wing", issue(
+    return said("chicken-wing", { angle: spoken.deg(angle) }, rate(rating, withIssue("chicken-wing", issue(
       "release",
       g,
       angle / L.minor,
@@ -849,15 +851,15 @@ function leadArmRelease(c: Context): Finding | null {
       detail,
       `A lead elbow bent ${Math.round(angle)}° just after impact means the arm pulled in instead of extending, which holds the face open and costs distance: weak fades and thin shots.`,
       frame.time,
-    )));
+    ))));
   }
-  return rate(rating, strength(
+  return said("release-good", { angle: spoken.deg(angle) }, rate(rating, strength(
     "release",
     "Arms extended through the ball",
     detail,
     `Your lead arm was within ${Math.round(angle)}° of straight after impact, so the club released fully down the target line.`,
     frame.time,
-  ));
+  )));
 }
 
 // ---------- Finish (both angles) ----------
@@ -901,7 +903,7 @@ function finishBalance(c: Context): Finding | null {
     `In the ${held.toFixed(1)}s after reaching your finish your head and hips moved ${inches(movedIn)} sideways.` +
     (forward !== null ? ` Your hips finished ${Math.round(Math.min(Math.max(forward, 0), 1.2) * 100)}% of the way from your trail foot to your lead foot.` : "");
   if (weightBack && (!wobble || (1 - (forward ?? 1)) / (1 - F.weightForward.minor) >= moved / F.holdTorso.minor)) {
-    return rate({ ...holdRating, value: forward!, thresholds: [F.weightForward.minor] }, withIssue("finish-balance", issue(
+    return said("finish-back-foot", { pct: spoken.pct(forward!) }, rate({ ...holdRating, value: forward!, thresholds: [F.weightForward.minor] }, withIssue("finish-balance", issue(
       "finish",
       weightBack,
       (1 - forward!) / (1 - F.weightForward.minor),
@@ -910,10 +912,10 @@ function finishBalance(c: Context): Finding | null {
       `Your hips ended only ${Math.round(forward! * 100)}% of the way to your lead foot, so your weight never fully got through the shot. A balanced finish has your belt buckle facing the target over your lead foot.`,
       finish,
       "hips",
-    )));
+    ))));
   }
   if (wobble) {
-    return rate(holdRating, withIssue("finish-balance", issue(
+    return said("finish-wobble", { in: spoken.inches(movedIn) }, rate(holdRating, withIssue("finish-balance", issue(
       "finish",
       wobble,
       moved / F.holdTorso.minor,
@@ -922,9 +924,9 @@ function finishBalance(c: Context): Finding | null {
       `Moving ${inches(movedIn)} sideways right after reaching the finish means you were off balance, usually because the swing pulled you toward the ball or onto your heels before impact.`,
       finish,
       angle === "face-on" ? "hips" : "head",
-    )));
+    ))));
   }
-  return rate(holdRating, strength(
+  return said("finish-good", { in: spoken.inches(movedIn), pct: forward !== null ? spoken.pct(forward) : "" }, rate(holdRating, strength(
     "finish",
     "Balanced, held finish",
     detail,
@@ -933,7 +935,7 @@ function finishBalance(c: Context): Finding | null {
       : `You held the finish with under ${inchesShort(Math.max(movedIn, 1))} of movement, proof the swing stayed in balance.`,
     finish,
     angle === "face-on" ? "hips" : "head",
-  ));
+  )));
 }
 
 /**

@@ -9,6 +9,7 @@ import AnalyzingOverlay from "./AnalyzingOverlay";
 import AnalysisPanel from "./AnalysisPanel";
 import ResultsPanel from "./ResultsPanel";
 import AidsPanel from "./AidsPanel";
+import CoachPanel from "./CoachPanel";
 import PuttOverlay from "./PuttOverlay";
 import { useAidSettings } from "@/hooks/useAidSettings";
 import { AIDS_FOR, AID_NAMES, aidShownAt, type AidKey, type AidSettings } from "@/lib/aidVisibility";
@@ -279,9 +280,9 @@ export default function VideoAnalyzer({ videoUrl, mode, onChangeVideo }: Props) 
         />
       </div>
 
-      {/* Right column: results (fits the screen and scrolls inside on computers) */}
+      {/* Right column: results (fits the screen and scrolls inside on computers), then the coach */}
       {analysis.status === "ready" && (
-        <div className="lg:sticky lg:top-4 lg:col-start-3 lg:row-start-1">
+        <div className="flex flex-col gap-4 lg:sticky lg:top-4 lg:col-start-3 lg:row-start-1">
           <ResultsPanel
             report={report}
             swingFound={swingFound}
@@ -295,6 +296,8 @@ export default function VideoAnalyzer({ videoUrl, mode, onChangeVideo }: Props) 
                 : undefined
             }
           />
+          {/* A new video remounts the coach, which starts a new conversation. */}
+          <CoachPanel key={videoUrl} report={swingFound ? report : null} mode={mode} />
         </div>
       )}
 
