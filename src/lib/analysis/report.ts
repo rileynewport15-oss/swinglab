@@ -11,8 +11,7 @@ const C = ANALYSIS_CONFIG.confidence;
 
 export type PhaseStatus = { id: PhaseId; name: string; time: number | null; status: "good" | "minor" | "major" | "none" };
 
-// effects: other issues this one likely causes (they should improve with it).
-export type Focus = { finding: Finding; why: string; cue: string; effects: Finding[] };
+export type Focus = { finding: Finding; why: string; cue: string };
 
 export type Report = {
   findings: Finding[]; // shown, biggest issues first
@@ -181,7 +180,7 @@ function pickFocus(findings: Finding[]): Focus | null {
     (effects.length
       ? ` It's also the likely cause of ${effects.length === 1 ? "another issue below" : `${effects.length} other issues below`} (${effects.join("; ")}), so fixing it should improve more than one thing.`
       : "");
-  return { finding: best, why, cue: CUES[best.issue!], effects: [...new Map(effectsOf(best, findings).map((f) => [f.id, f])).values()] };
+  return { finding: best, why, cue: CUES[best.issue!] };
 }
 
 // ---------- Summary ----------
