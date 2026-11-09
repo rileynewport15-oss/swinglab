@@ -198,7 +198,11 @@ function scoreOf(findings: Finding[], focus: Focus | null, mode: ShotMode): Scor
     const points = S.penalty[f.severity ?? "minor"] * S.confidenceWeight[f.confidence ?? "low"];
     return sum + points * (causedBy(f, findings) ? S.linkedIssueShare : 1);
   }, 0);
-  const value = Math.max(S.lowest, Math.round(100 - lost));
+  // Strengths close enough to their limit that they could have gone either way.
+  const borderline = findings
+    .filter((f) => f.status === "strength" && f.metric && f.evidence && Number.isFinite(f.evidence.margin))
+    .reduce((sum, f) => sum + S.borderline.points * (1 - clamp(f.evidence!.margin / C.noise[f.metric!] / S.borderline.withinNoise)), 0);
+  const value = Math.max(S.lowest, Math.round(100 - lost - borderline));
   const label = S.bands.find((b) => value >= b.min)!.label;
   const what = mode === "putt" ? "stroke" : "swing";
   const strengths = findings.length - issues.length;

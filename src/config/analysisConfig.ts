@@ -119,6 +119,11 @@ export const ANALYSIS_CONFIG = {
     // so one root cause isn't charged twice.
     linkedIssueShare: 0.6,
     confidenceWeight: { high: 1, medium: 0.75, low: 0.4 },
+    // A strength that only just passes costs a little, so 100 means every
+    // check passed with room to spare. A reading right on its limit costs
+    // `points`; one that's `withinNoise` noise widths clear (see
+    // confidence.noise) or more costs nothing, with a sliding scale between.
+    borderline: { points: 3, withinNoise: 1 },
     lowest: 20,
     // Below this many shown results there isn't enough to score.
     minResults: 3,
