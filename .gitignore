@@ -53,7 +53,7 @@ next-env.d.ts
 *.webm
 *.m4v
 # ...except the sample clips on the start page
-!/public/samples/*.mov
+!/public/samples/*.mp4
 
 # temporary test copies of videos
 /public/_test/

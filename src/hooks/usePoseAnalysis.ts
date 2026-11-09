@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { analyzeVideo, mergeDetail } from "@/lib/pose/analyze";
 import { checkQuality, findAddress, type AddressFrame, type QualityProblem } from "@/lib/pose/address";
+import { resetPoseLandmarker } from "@/lib/pose/landmarker";
 import { ADDRESS_LEAD, detectKeyMoments, takeawayTime, type KeyMoments } from "@/lib/analysis/keyMoments";
 import { nearestFrame, type PoseTrack, type Px } from "@/lib/pose/landmarks";
 import type { ShotMode } from "@/config/analysisConfig";
@@ -167,6 +168,8 @@ export function usePoseAnalysis(
     })().catch((err) => {
       if (controller.signal.aborted) return;
       console.error("Pose analysis failed", err);
+      // A failed run can leave the pose model broken; start the next video fresh.
+      resetPoseLandmarker();
       setAnalysis({ status: "failed", problem: "error" });
     });
 

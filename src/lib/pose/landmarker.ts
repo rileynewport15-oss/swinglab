@@ -31,6 +31,16 @@ export function getPoseLandmarker(): Promise<PoseLandmarker> {
   return landmarkerPromise;
 }
 
+/**
+ * Throw away the loaded model after an error, so the next video gets a fresh
+ * one. (Once MediaPipe's graph fails, the same instance keeps failing.)
+ */
+export function resetPoseLandmarker() {
+  const old = landmarkerPromise;
+  landmarkerPromise = null;
+  old?.then((l) => l.close()).catch(() => {});
+}
+
 // MediaPipe needs every timestamp to be larger than the one before, even
 // across passes and videos. It also smooths landmarks over time, so the
 // timestamps should follow the video's own clock. Each pass gets its own

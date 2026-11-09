@@ -8,6 +8,7 @@ import PoseOverlay from "./PoseOverlay";
 import AnalyzingOverlay from "./AnalyzingOverlay";
 import AnalysisPanel from "./AnalysisPanel";
 import ResultsPanel from "./ResultsPanel";
+import UnplayableVideo from "./UnplayableVideo";
 import AidsPanel from "./AidsPanel";
 import PuttOverlay from "./PuttOverlay";
 import { useAidSettings } from "@/hooks/useAidSettings";
@@ -51,6 +52,8 @@ export default function VideoAnalyzer({ videoUrl, mode, onChangeVideo }: Props) 
   const [moments, setMoments] = useState<Moments | null>(null);
   const [activeFinding, setActiveFinding] = useState<string | null>(null);
   const [highlightAid, setHighlightAid] = useState<AidKind | null>(null);
+  // The browser can't show this video (e.g. an iPhone HEVC .mov in Firefox).
+  const [unplayable, setUnplayable] = useState(false);
 
   function jumpTo(time: number) {
     const video = videoRef.current;
@@ -227,12 +230,28 @@ export default function VideoAnalyzer({ videoUrl, mode, onChangeVideo }: Props) 
     const onMeta = () => {
       if (video.videoWidth && video.videoHeight) {
         setAspect(video.videoWidth / video.videoHeight);
+      } else {
+        // Metadata loaded but no picture: the browser can play the sound
+        // but not this video format.
+        setUnplayable(true);
       }
     };
+    // Not supported or can't be decoded (not a network or user abort).
+    const onError = () => {
+      const code = video.error?.code;
+      if (code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED || code === MediaError.MEDIA_ERR_DECODE) setUnplayable(true);
+    };
     video.addEventListener("loadedmetadata", onMeta);
+    video.addEventListener("error", onError);
     if (video.readyState >= 1) onMeta();
-    return () => video.removeEventListener("loadedmetadata", onMeta);
+    if (video.error) onError();
+    return () => {
+      video.removeEventListener("loadedmetadata", onMeta);
+      video.removeEventListener("error", onError);
+    };
   }, [videoUrl]);
+
+  if (unplayable) return <UnplayableVideo onChangeVideo={onChangeVideo} />;
 
   return (
     // Laptop/desktop: three columns. Left = training aids + swing analysis,

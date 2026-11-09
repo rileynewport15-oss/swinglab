@@ -38,6 +38,9 @@ export async function analyzeVideo(
 
   try {
     await waitFor(video, "loadeddata");
+    // Sound but no picture: the browser can't decode this video format. Stop
+    // here; a 0×0 frame would crash MediaPipe's graph.
+    if (!video.videoWidth || !video.videoHeight) throw new Error("Could not read this video");
     const duration = await getDuration(video);
     const stop = Math.min(end ?? duration, duration, start + MAX_SECONDS);
     const length = stop - start;

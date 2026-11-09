@@ -6,9 +6,11 @@ import Landing from "@/components/Landing";
 import VideoAnalyzer from "@/components/VideoAnalyzer";
 
 // Sample clips for trying the app without your own video (public/samples).
+// H.264 MP4 at the original 1080p, so they play in every browser and analyze
+// the same as the iPhone originals (lower resolutions hid putt results).
 const SAMPLES: Record<Mode, string> = {
-  "full-swing": "/samples/sample-swing.mov", // down the line
-  putt: "/samples/sample-putt.mov", // face on
+  "full-swing": "/samples/sample-swing.mp4", // down the line
+  putt: "/samples/sample-putt.mp4", // face on
 };
 
 export default function Home() {
