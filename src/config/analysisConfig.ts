@@ -109,6 +109,28 @@ export const ANALYSIS_CONFIG = {
     },
   },
 
+  // The overall score (0–100) at the top of the results. It starts at 100 and
+  // each area to improve takes off points by severity, scaled by how sure the
+  // result is. Hidden (too unclear) results don't count.
+  score: {
+    penalty: { major: 18, minor: 8 },
+    // An issue that's likely caused by another one (e.g. hands stuck under
+    // plane because of early extension) counts for this share of its points,
+    // so one root cause isn't charged twice.
+    linkedIssueShare: 0.6,
+    confidenceWeight: { high: 1, medium: 0.75, low: 0.4 },
+    lowest: 20,
+    // Below this many shown results there isn't enough to score.
+    minResults: 3,
+    // Names for score ranges, highest first.
+    bands: [
+      { min: 90, label: "Excellent" },
+      { min: 75, label: "Solid" },
+      { min: 60, label: "Getting there" },
+      { min: 0, label: "Needs work" },
+    ],
+  },
+
   fullSwing: {
     // Tempo = backswing time ÷ downswing time. Inside [goodMin, goodMax] is a
     // strength; outside [okMin, okMax] is a major issue; in between is minor.

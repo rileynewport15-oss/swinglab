@@ -28,6 +28,7 @@ import type { PuttMoments } from "@/lib/putting/moments";
 import { MOMENT_SPECS, allFound, momentTime, type Moments } from "@/lib/moments";
 import type { ShotMode } from "@/config/analysisConfig";
 import type { AidKind } from "@/lib/shapes";
+import { captureStage, downloadReportImage } from "@/lib/reportImage";
 
 type Props = {
   videoUrl: string;
@@ -40,6 +41,7 @@ const MIN_GAP = 0.03; // seconds kept between markers so they stay in order (e.g
 // The review screen: the video (with pose skeleton and aids on top) plus all the controls.
 export default function VideoAnalyzer({ videoUrl, mode, onChangeVideo }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const stageRef = useRef<HTMLDivElement>(null);
   const [aspect, setAspect] = useState(9 / 16);
   const drawing = useDrawing();
   // The camera angle is detected from the video; the golfer can still switch it.
@@ -194,6 +196,30 @@ export default function VideoAnalyzer({ videoUrl, mode, onChangeVideo }: Props) 
     if (f) jumpTo(f.time);
   }
 
+  // The one-page report: shows the focus issue (or the address frame) with its
+  // aid highlighted, waits for the overlays to draw it, then saves the image.
+  async function downloadReport() {
+    const video = videoRef.current;
+    const stage = stageRef.current;
+    if (!report || !video || !stage) throw new Error("Nothing to report yet");
+    const focus = report.focus?.finding ?? report.findings.find((f) => f.status === "improve") ?? null;
+    const time = focus?.time ?? addressTime();
+    if (focus) selectFinding(focus);
+    else jumpTo(time);
+    if (video.seeking) await new Promise((resolve) => video.addEventListener("seeked", resolve, { once: true }));
+    // The overlays redraw on the next animation frames.
+    for (let i = 0; i < 3; i++) await new Promise(requestAnimationFrame);
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    await downloadReportImage({
+      report,
+      mode,
+      angle: cameraAngle,
+      frame: captureStage(stage, video),
+      frameTime: video.currentTime,
+      frameCaption: focus ? focus.title : `${specs[0].label} position`,
+    });
+  }
+
   // Match the stage's shape to the video so drawings line up with the picture.
   useEffect(() => {
     const video = videoRef.current;
@@ -220,9 +246,11 @@ export default function VideoAnalyzer({ videoUrl, mode, onChangeVideo }: Props) 
         {/* On phones this bar pins the video to the top of the screen. */}
         <div className="sticky top-0 z-20 -mx-4 bg-fairway-50 px-4 py-2 lg:static lg:m-0 lg:bg-transparent lg:p-0">
           {/* Stage height: smaller on phones so the pinned video leaves room to
-              scroll; on computers, as tall as fits with the controls below. */}
+              scroll; on computers, as tall as fits with the controls and the
+              New swing button below. */}
           <div
-            className="no-select relative mx-auto w-full overflow-hidden rounded-3xl bg-black shadow-lg [--stage-h:40svh] lg:[--stage-h:calc(100svh-430px)]"
+            ref={stageRef}
+            className="no-select relative mx-auto w-full overflow-hidden rounded-3xl bg-black shadow-lg [--stage-h:40svh] lg:[--stage-h:calc(100svh-482px)]"
             style={{ aspectRatio: aspect, maxWidth: `calc(var(--stage-h) * ${aspect})` }}
           >
             <video
@@ -277,6 +305,12 @@ export default function VideoAnalyzer({ videoUrl, mode, onChangeVideo }: Props) 
           onMarkerMove={moveMarker}
           jumps={jumps}
         />
+        <button
+          onClick={onChangeVideo}
+          className="-mt-1 flex min-h-10 items-center justify-center gap-1.5 self-center rounded-xl px-4 text-sm font-semibold text-fairway-700 hover:bg-white"
+        >
+          <span aria-hidden>＋</span> New {mode === "putt" ? "putt" : "swing"}
+        </button>
       </div>
 
       {/* Right column: results (fits the screen and scrolls inside on computers) */}
@@ -289,6 +323,7 @@ export default function VideoAnalyzer({ videoUrl, mode, onChangeVideo }: Props) 
             onSelect={selectFinding}
             onJump={jumpTo}
             mode={mode}
+            onDownload={downloadReport}
             note={
               mode === "putt" && cameraAngle === "down-the-line"
                 ? "From down the line you see the stroke path and your eye line. Tempo, stroke length and the pendulum (shoulders, triangle) need a Face On video."

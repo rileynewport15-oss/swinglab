@@ -16,6 +16,7 @@ type Props = {
   onJump: (time: number) => void; // show a moment of the swing (phase strip)
   mode: ShotMode;
   note?: string; // extra line under the heading (e.g. what this camera angle can't show)
+  onDownload: () => Promise<void>; // save the one-page report image
 };
 
 const NOT_FOUND: Record<ShotMode, string> = {
@@ -29,9 +30,21 @@ const NOT_FOUND: Record<ShotMode, string> = {
 // its badge, title and confidence; clicking it opens the details, jumps the
 // video to that moment and highlights the matching aid. On computers the card
 // fits the screen and scrolls inside itself.
-export default function ResultsPanel({ report, swingFound, activeId, onSelect, onJump, mode, note }: Props) {
+export default function ResultsPanel({ report, swingFound, activeId, onSelect, onJump, mode, note, onDownload }: Props) {
   const [open, setOpen] = useState({ improve: true, strengths: false });
   const [showPlan, setShowPlan] = useState(false);
+  const [saving, setSaving] = useState<"idle" | "saving" | "failed">("idle");
+
+  async function download() {
+    setSaving("saving");
+    try {
+      await onDownload();
+      setSaving("idle");
+    } catch (e) {
+      console.error("Report export failed", e);
+      setSaving("failed");
+    }
+  }
   const findings = report?.findings ?? [];
   const improve = findings.filter((f) => f.status === "improve");
   const strengths = findings.filter((f) => f.status === "strength");
@@ -44,6 +57,7 @@ export default function ResultsPanel({ report, swingFound, activeId, onSelect, o
     <div className="flex flex-col rounded-3xl bg-white shadow-sm lg:max-h-[calc(100svh-2rem)]">
       <div className="p-4 pb-2">
         <h2 className="font-bold text-fairway-900">Your results</h2>
+        {shown && report.score && <ScoreBadge score={report.score} />}
         {shown ? (
           <p className="mt-1 text-sm leading-snug text-fairway-900">{report.summary}</p>
         ) : (
@@ -51,12 +65,26 @@ export default function ResultsPanel({ report, swingFound, activeId, onSelect, o
         )}
         {shown && note && <p className="mt-1 text-xs text-fairway-600">{note}</p>}
         {shown && (
-          <button
-            onClick={() => setShowPlan(true)}
-            className="mt-3 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-fairway-700 text-sm font-semibold text-white hover:bg-fairway-800"
-          >
-            <span aria-hidden>📅</span> Build my practice plan
-          </button>
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <button
+              onClick={() => setShowPlan(true)}
+              className="flex min-h-11 items-center justify-center gap-1.5 rounded-xl bg-fairway-700 px-2 text-sm font-semibold text-white hover:bg-fairway-800"
+            >
+              <span aria-hidden className="hidden sm:inline">📅</span> Practice plan
+            </button>
+            <button
+              onClick={download}
+              disabled={saving === "saving"}
+              className="flex min-h-11 items-center justify-center gap-1.5 whitespace-nowrap rounded-xl border-2 border-fairway-700 px-2 text-sm font-semibold text-fairway-800 hover:bg-fairway-50 disabled:opacity-60"
+            >
+              <span aria-hidden className="hidden sm:inline">⬇️</span> {saving === "saving" ? "Saving…" : "Download report"}
+            </button>
+          </div>
+        )}
+        {saving === "failed" && (
+          <p role="alert" className="mt-1 text-xs text-red-700">
+            Couldn&apos;t make the report. Try again.
+          </p>
         )}
       </div>
       {showPlan && <PracticePlanModal plan={buildPracticePlan(findings, mode)} onClose={() => setShowPlan(false)} />}
@@ -111,6 +139,40 @@ export default function ResultsPanel({ report, swingFound, activeId, onSelect, o
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+// The overall score: a ring filled to the score, its name and one sentence.
+function ScoreBadge({ score }: { score: NonNullable<Report["score"]> }) {
+  const color = score.value >= 75 ? "var(--color-fairway-600)" : score.value >= 60 ? "#f59e0b" : "#dc2626";
+  const r = 26;
+  const c = 2 * Math.PI * r;
+  return (
+    <div className="mt-2 flex items-center gap-3 rounded-2xl bg-fairway-50 p-3">
+      <svg viewBox="0 0 64 64" className="h-16 w-16 shrink-0" role="img" aria-label={`Score ${score.value} out of 100`}>
+        <circle cx="32" cy="32" r={r} fill="none" stroke="var(--color-fairway-100)" strokeWidth="7" />
+        <circle
+          cx="32"
+          cy="32"
+          r={r}
+          fill="none"
+          stroke={color}
+          strokeWidth="7"
+          strokeLinecap="round"
+          strokeDasharray={`${(score.value / 100) * c} ${c}`}
+          transform="rotate(-90 32 32)"
+        />
+        <text x="32" y="38" textAnchor="middle" fontSize="18" fontWeight="800" fill="var(--color-fairway-900)">
+          {score.value}
+        </text>
+      </svg>
+      <div>
+        <p className="text-sm font-bold text-fairway-900">
+          {score.label} <span className="font-medium text-fairway-600">· {score.value}/100</span>
+        </p>
+        <p className="mt-0.5 text-xs leading-snug text-fairway-800">{score.sentence}</p>
+      </div>
     </div>
   );
 }

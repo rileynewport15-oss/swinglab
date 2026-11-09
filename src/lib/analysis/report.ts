@@ -13,7 +13,10 @@ export type PhaseStatus = { id: PhaseId; name: string; time: number | null; stat
 
 export type Focus = { finding: Finding; why: string; cue: string };
 
+export type Score = { value: number; label: string; sentence: string };
+
 export type Report = {
+  score: Score | null; // null when there are too few results to score
   findings: Finding[]; // shown, biggest issues first
   hidden: Finding[]; // too low confidence to show as results
   focus: Focus | null;
@@ -54,6 +57,7 @@ export function buildReport({ findings, mode, pxPerInch, phaseTimes }: Input): R
   const connected = connect(shown);
   const focus = pickFocus(connected);
   return {
+    score: scoreOf(connected, focus, mode),
     findings: connected,
     hidden,
     focus,
@@ -181,6 +185,36 @@ function pickFocus(findings: Finding[]): Focus | null {
       ? ` It's also the likely cause of ${effects.length === 1 ? "another issue below" : `${effects.length} other issues below`} (${effects.join("; ")}), so fixing it should improve more than one thing.`
       : "");
   return { finding: best, why, cue: CUES[best.issue!] };
+}
+
+// ---------- Score ----------
+
+/** 100 minus points for each area to improve (see `score` in analysisConfig.ts). */
+function scoreOf(findings: Finding[], focus: Focus | null, mode: ShotMode): Score | null {
+  const S = ANALYSIS_CONFIG.score;
+  if (findings.length < S.minResults) return null;
+  const issues = findings.filter((f) => f.status === "improve");
+  const lost = issues.reduce((sum, f) => {
+    const points = S.penalty[f.severity ?? "minor"] * S.confidenceWeight[f.confidence ?? "low"];
+    return sum + points * (causedBy(f, findings) ? S.linkedIssueShare : 1);
+  }, 0);
+  const value = Math.max(S.lowest, Math.round(100 - lost));
+  const label = S.bands.find((b) => value >= b.min)!.label;
+  const what = mode === "putt" ? "stroke" : "swing";
+  const strengths = findings.length - issues.length;
+  const good = `${strengths} ${strengths === 1 ? "thing" : "things"} working`;
+  const majors = issues.filter((f) => f.severity === "major").length;
+  const minors = issues.length - majors;
+  const counts = [
+    majors ? `${majors} major ${majors === 1 ? "issue" : "issues"}` : null,
+    minors ? `${minors} minor ${minors === 1 ? "issue" : "issues"}` : null,
+  ].filter(Boolean) as string[];
+  const lead = focus ? ` (start with ${focus.finding.label ?? lowerFirst(focus.finding.title)})` : "";
+  const sentence =
+    issues.length === 0
+      ? `${label} ${what}: ${good} and nothing clear to fix.`
+      : `${label} ${what}: ${good}, with ${list(counts)} to work on${lead}.`;
+  return { value, label, sentence };
 }
 
 // ---------- Summary ----------
