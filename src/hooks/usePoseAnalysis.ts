@@ -30,7 +30,7 @@ export type PoseAnalysis =
 
 // Share of the progress bar for the first (whole video) pass; the rest is the
 // close look at the swing.
-const FIRST_PASS = 0.75;
+export const FIRST_PASS = 0.75;
 // The close look covers the swing at 60 samples per second, so the short
 // downswing gets enough frames for an accurate tempo and impact.
 const DETAIL_FPS = 60;

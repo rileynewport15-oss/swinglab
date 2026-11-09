@@ -2,8 +2,14 @@
 
 import { useEffect, useState } from "react";
 import ModeSelector, { MODES, type Mode } from "@/components/ModeSelector";
-import VideoUpload from "@/components/VideoUpload";
+import Landing from "@/components/Landing";
 import VideoAnalyzer from "@/components/VideoAnalyzer";
+
+// Sample clips for trying the app without your own video (public/samples).
+const SAMPLES: Record<Mode, string> = {
+  "full-swing": "/samples/sample-swing.mov", // down the line
+  putt: "/samples/sample-putt.mov", // face on
+};
 
 export default function Home() {
   const [mode, setMode] = useState<Mode>("full-swing");
@@ -13,7 +19,7 @@ export default function Home() {
   // instead of uploading it anywhere. Free it when it's replaced.
   useEffect(() => {
     return () => {
-      if (videoUrl) URL.revokeObjectURL(videoUrl);
+      if (videoUrl?.startsWith("blob:")) URL.revokeObjectURL(videoUrl);
     };
   }, [videoUrl]);
 
@@ -33,9 +39,11 @@ export default function Home() {
       </header>
 
       <main className="mx-auto flex w-full max-w-xl lg:max-w-[1400px] flex-1 flex-col gap-4 px-4 py-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
-        <p className="text-sm font-medium text-fairway-700">
-          Reviewing: <span className="font-bold">{modeLabel}</span>
-        </p>
+        {videoUrl && (
+          <p className="text-sm font-medium text-fairway-700">
+            Reviewing: <span className="font-bold">{modeLabel}</span>
+          </p>
+        )}
 
         {videoUrl ? (
           <VideoAnalyzer
@@ -47,11 +55,11 @@ export default function Home() {
             onChangeVideo={() => setVideoUrl(null)}
           />
         ) : (
-          <div className="w-full lg:mx-auto lg:max-w-md">
-            <VideoUpload
-              onVideoSelected={(file) => setVideoUrl(URL.createObjectURL(file))}
-            />
-          </div>
+          <Landing
+            mode={mode}
+            onVideoSelected={(file) => setVideoUrl(URL.createObjectURL(file))}
+            onTrySample={() => setVideoUrl(SAMPLES[mode])}
+          />
         )}
       </main>
     </div>
